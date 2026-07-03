@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+*.egg-info/
+dist/
+.pytest_cache/
+
+# Environment
+.env
+*.env
+
+# Firebase — NEVER commit this
+firebase-service-account.json
+
+# Chroma
+chroma_data/
+
+# Alembic
+alembic/versions/*.pyc
