@@ -6,7 +6,8 @@
 
 ```
 vinavalai/
-├── frontend/          # React + Vite + TypeScript + Tailwind CSS
+├── frontend/          # Streamlit Multi-Page App (Python)
+├── frontend_react/    # Legacy React + Vite + TypeScript (Backup)
 ├── backend/           # FastAPI + SQLAlchemy + ChromaDB
 ├── docker-compose.yml
 └── README.md
@@ -16,7 +17,6 @@ vinavalai/
 
 ### Prerequisites
 - Python 3.11+
-- Node.js 20+
 - PostgreSQL 16+
 - Docker & Docker Compose (recommended)
 
@@ -35,7 +35,7 @@ docker-compose up --build
 ```
 
 App will be available at:
-- Frontend: http://localhost:5173
+- Frontend (Streamlit): http://localhost:8501
 - Backend API: http://localhost:8000
 - API Docs: http://localhost:8000/docs
 
@@ -58,12 +58,14 @@ alembic upgrade head
 uvicorn app.main:app --reload --port 8000
 ```
 
-**Frontend**
+**Frontend (Streamlit)**
 ```bash
 cd frontend
-npm install
-cp .env.example .env    # fill in VITE_GOOGLE_CLIENT_ID
-npm run dev
+python -m venv venv
+venv\Scripts\activate   # Windows
+pip install -r requirements.txt
+cp .env.example .env    # fill in values (API_URL=http://localhost:8000/api/v1)
+streamlit run app.py
 ```
 
 ---
@@ -82,44 +84,28 @@ npm run dev
 ### Frontend (`frontend/.env`)
 | Variable | Description |
 |---|---|
-| `VITE_GOOGLE_CLIENT_ID` | Same Google OAuth Client ID |
-| `VITE_GOOGLE_REDIRECT_URI` | Redirect URI (must match Google Console) |
+| `API_URL` | URL to FastAPI backend (e.g., http://localhost:8000/api/v1) |
 
 ---
 
-## Firebase Auth Setup
+## Authentication (Mock Login)
 
-### Firebase Console (once per project)
-1. Go to [Firebase Console](https://console.firebase.google.com/) → Create project
-2. **Authentication** → Sign-in method → Enable **Google**
-3. **Project Settings** → Your apps → Add a **Web app** → Copy the config into `frontend/.env`
-4. **Project Settings** → Service Accounts → **Generate new private key** → save as `backend/firebase-service-account.json`
+Currently, the Streamlit frontend uses a **Mock Login** system that bypasses Firebase for rapid development. 
 
-> ⚠️ Never commit `firebase-service-account.json` to git. Add it to `.gitignore`.
+To log in:
+1. Navigate to the Streamlit Home Page (`http://localhost:8501`).
+2. Enter any valid email (e.g., `test@example.com`).
+3. The system will automatically generate a mock user in PostgreSQL and issue a JWT token for all API access.
 
-### Environment Variables
+*(Note: The legacy React app used Firebase Google Auth. To restore Firebase, you'll need to adapt the `auth_service.py` back to using `login_with_firebase` and build a custom Firebase OAuth component for Streamlit).*
 
-**Backend (`backend/.env`)**
-| Variable | Description |
-|---|---|
-| `DATABASE_URL` | PostgreSQL async connection string |
-| `SECRET_KEY` | JWT signing secret (generate a strong random key) |
-| `FIREBASE_SERVICE_ACCOUNT_PATH` | Path to downloaded Firebase service account JSON |
-| `GROQ_API_KEY` | Groq API key from [console.groq.com](https://console.groq.com) |
-
-**Frontend (`frontend/.env`)**
-| Variable | Description |
-|---|---|
-| `VITE_FIREBASE_API_KEY` | From Firebase Web App config |
-| `VITE_FIREBASE_AUTH_DOMAIN` | From Firebase Web App config |
-| `VITE_FIREBASE_PROJECT_ID` | From Firebase Web App config |
-| `VITE_FIREBASE_APP_ID` | From Firebase Web App config |
+---
 
 
 | Layer | Technology |
 |---|---|
-| Frontend | React 18, Vite, TypeScript, Tailwind CSS |
-| State | TanStack Query, React Context |
+| Frontend | Streamlit, Python, requests |
+| State | Streamlit Session State |
 | Backend | FastAPI, SQLAlchemy (async), Alembic |
 | Database | PostgreSQL |
 | Vector DB | ChromaDB |
