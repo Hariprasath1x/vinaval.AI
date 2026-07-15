@@ -41,13 +41,11 @@ services:
       dockerfile: Dockerfile
     container_name: vinavalai_frontend
     ports:
-      - "5173:5173"
+      - "8501:8501"
     env_file:
       - ./frontend/.env
     volumes:
       - ./frontend:/app
-      - /app/node_modules
-    command: npm run dev -- --host
 
 volumes:
   postgres_data:

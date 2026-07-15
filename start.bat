@@ -1,0 +1,3 @@
+@echo off
+echo Starting Vinaval AI Platform...
+docker-compose up --build

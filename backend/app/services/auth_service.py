@@ -37,3 +37,26 @@ class AuthService:
             access_token=access_token,
             user=UserResponse.model_validate(user),
         )
+
+    async def login_mock(self, email: str) -> TokenResponse:
+        """
+        Mock login for Streamlit frontend development.
+        Bypasses Firebase and creates/fetches a dummy user.
+        """
+        user = await self.repo.get_by_google_id(email)
+        if not user:
+            user = await self.repo.create(
+                UserCreate(
+                    google_id=email,
+                    email=email,
+                    name=email.split("@")[0],
+                    avatar_url=None,
+                )
+            )
+            
+        access_token = create_access_token(data={"sub": str(user.id)})
+
+        return TokenResponse(
+            access_token=access_token,
+            user=UserResponse.model_validate(user),
+        )

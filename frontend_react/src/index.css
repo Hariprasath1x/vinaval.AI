@@ -1,0 +1,206 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ─── Fonts ───────────────────────────────────────────── */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+/* ─── Design Tokens ───────────────────────────────────── */
+:root {
+  --bg:          #0f1117;
+  --bg-surface:  #161b27;
+  --bg-elevated: #1d2535;
+  --border:      rgba(255, 255, 255, 0.08);
+  --border-soft: rgba(255, 255, 255, 0.05);
+  --text:        #d4d8e2;
+  --text-muted:  #7a8394;
+  --text-dim:    #4a5568;
+  --accent:      #5a7ff5;
+  --accent-soft: rgba(90, 127, 245, 0.12);
+  --accent-muted:rgba(90, 127, 245, 0.06);
+  --green:       #4ade80;
+  --green-soft:  rgba(74, 222, 128, 0.10);
+  --red:         #f87171;
+  --red-soft:    rgba(248, 113, 113, 0.10);
+  --amber:       #fbbf24;
+}
+
+/* ─── Reset ───────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; }
+html { scroll-behavior: smooth; -webkit-font-smoothing: antialiased; }
+
+body {
+  margin: 0;
+  background-color: var(--bg);
+  color: var(--text);
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 15px;
+  line-height: 1.6;
+  overflow-x: hidden;
+}
+
+#root {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+/* ─── Scrollbar ───────────────────────────────────────── */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(90, 127, 245, 0.4); }
+
+/* ─── Utility Classes ─────────────────────────────────── */
+@layer components {
+
+  /* Card — simple bordered box, no blur blur */
+  .glass-card {
+    background-color: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+  }
+
+  /* Primary button — clean, simple */
+  .btn-primary {
+    @apply inline-flex items-center gap-2 px-5 py-2.5 rounded-lg
+           font-semibold text-sm text-white
+           transition-all duration-150
+           hover:brightness-110 active:scale-[0.98];
+    background-color: var(--accent);
+    border: 1px solid rgba(90, 127, 245, 0.6);
+  }
+
+  /* Outline button */
+  .btn-outline {
+    @apply inline-flex items-center gap-2 px-5 py-2.5 rounded-lg
+           font-medium text-sm transition-all duration-150
+           hover:bg-white/[0.04] active:scale-[0.98];
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+  }
+  .btn-outline:hover {
+    color: var(--text);
+    border-color: rgba(255, 255, 255, 0.15);
+  }
+
+  /* Input field */
+  .input-field {
+    @apply w-full px-3.5 py-2.5 rounded-lg text-sm outline-none
+           transition-colors duration-150;
+    background-color: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+  }
+  .input-field::placeholder { color: var(--text-dim); }
+  .input-field:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-soft);
+  }
+
+  /* Accent text */
+  .gradient-text {
+    color: var(--accent);
+  }
+
+  /* Glow dot */
+  .glow-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background-color: var(--green);
+    flex-shrink: 0;
+  }
+
+  /* Feature card */
+  .feature-card {
+    @apply glass-card p-5 transition-colors duration-150
+           hover:border-white/[0.13];
+  }
+
+  /* Skeleton shimmer */
+  .skeleton {
+    background: linear-gradient(
+      90deg,
+      var(--bg-elevated) 25%,
+      rgba(255,255,255,0.05) 50%,
+      var(--bg-elevated) 75%
+    );
+    background-size: 200% 100%;
+    animation: skeleton-shimmer 1.5s ease-in-out infinite;
+  }
+
+  /* Tab panel fade */
+  .tab-panel-enter {
+    animation: fade-up 0.18s ease-out both;
+  }
+
+  /* Scrollbar hide for tab overflow */
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-hide::-webkit-scrollbar { display: none; }
+}
+
+/* ─── Keyframes ───────────────────────────────────────── */
+@keyframes skeleton-shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; transform: scale(0.97); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-up    { animation: fade-up 0.25s ease-out both; }
+.animate-fade-in    { animation: fade-in 0.15s ease-out both; }
+.animate-toast-in   { animation: toast-in 0.2s ease-out both; }
+.animate-pulse-slow { animation: pulse 2.5s ease-in-out infinite; }
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.45; }
+}
+
+/* ─── Orb (kept but very subtle) ─────────────────────── */
+.orb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(100px);
+  opacity: 0.04;
+  pointer-events: none;
+}
+
+/* ─── Tag / Badge ─────────────────────────────────────── */
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  background: var(--bg-elevated);
+}
+
+/* ─── Divider ─────────────────────────────────────────── */
+.divider {
+  border: none;
+  border-top: 1px solid var(--border-soft);
+  margin: 0;
+}

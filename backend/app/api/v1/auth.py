@@ -38,6 +38,28 @@ async def firebase_login(
         )
 
 
+class MockLoginRequest(BaseModel):
+    email: str
+
+
+@router.post("/mock", response_model=TokenResponse)
+async def mock_login(
+    body: MockLoginRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Mock login for Streamlit dev.
+    """
+    try:
+        service = AuthService(db)
+        return await service.login_mock(body.email)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Mock auth failed: {exc}",
+        )
+
+
 @router.get("/me", response_model=UserResponse)
 async def get_me(current_user: User = Depends(get_current_user)):
     """Return the currently authenticated user's profile."""
