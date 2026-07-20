@@ -25,6 +25,7 @@ class FlashcardService:
                 subject=space.subject,
                 topic=req.topic,
                 count=count,
+                lang=getattr(req, "lang", "en"),
             )
         except ValueError as e:
             raise HTTPException(

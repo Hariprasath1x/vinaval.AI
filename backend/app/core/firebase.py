@@ -29,12 +29,17 @@ def init_firebase() -> None:
 
     try:
         cred = credentials.Certificate(path)
-        firebase_admin.initialize_app(cred)
+        try:
+            firebase_admin.initialize_app(cred)
+        except ValueError:
+            # App already initialized (e.g., during hot-reload) — just reuse it
+            pass
         _initialized = True
         print("Firebase Admin SDK initialized successfully.")
     except Exception as exc:
         _init_error = str(exc)
         print(f"Firebase init failed: {_init_error}")
+
 
 
 def verify_firebase_token(id_token: str) -> dict:

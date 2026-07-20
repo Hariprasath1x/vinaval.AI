@@ -10,8 +10,10 @@ from app.schemas.quiz import (
     SubmitAnswerRequest,
     AnswerResult,
     SpaceStats,
+    QuizReviewRequest,
+    QuizReviewResponse,
 )
-from app.rag.chain import generate_mcqs
+from app.rag.chain import generate_mcqs, generate_quiz_review
 
 
 class QuizService:
@@ -30,6 +32,7 @@ class QuizService:
                 subject=space.subject,
                 topic=req.topic,
                 count=count,
+                lang=getattr(req, "lang", "en"),
             )
         except ValueError as e:
             raise HTTPException(
@@ -130,3 +133,18 @@ class QuizService:
             accuracy_all=pct(all_correct, all_total),
             topics_practiced=data["topics"],
         )
+
+    async def generate_review(
+        self, space: LearningSpace, req: QuizReviewRequest
+    ) -> QuizReviewResponse:
+        results_list = [{"topic": r.topic, "is_correct": r.is_correct} for r in req.results]
+        try:
+            review_text = await generate_quiz_review(
+                exam=space.exam_id,
+                subject=space.subject,
+                results=results_list,
+            )
+        except Exception as e:
+            review_text = "Good effort! Keep studying and practicing to improve your scores."
+
+        return QuizReviewResponse(review=review_text)

@@ -6,6 +6,7 @@ from datetime import datetime
 class GenerateFlashcardsRequest(BaseModel):
     topic: str = Field(..., min_length=1, max_length=200)
     count: int = Field(default=8, ge=1, le=20)
+    lang: str = Field(default="en", description="Output language: 'en' (English) or 'ta' (Tamil)")
 
 
 class FlashcardOut(BaseModel):

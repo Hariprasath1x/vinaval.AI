@@ -1,9 +1,10 @@
 from datetime import datetime
-from sqlalchemy import Integer, String, DateTime, ForeignKey, Column
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy import Integer, String, DateTime, ForeignKey
+from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
 
 from app.core.database import Base
+
 
 class SpaceDocument(Base):
     __tablename__ = "space_documents"
@@ -13,7 +14,10 @@ class SpaceDocument(Base):
         Integer, ForeignKey("learning_spaces.id", ondelete="CASCADE"), nullable=False, index=True
     )
     filename: Mapped[str] = mapped_column(String, nullable=False)
-    file_type: Mapped[str] = mapped_column(String, nullable=False) # e.g. "pdf", "txt"
+    file_type: Mapped[str] = mapped_column(String, nullable=False)  # e.g. "pdf", "txt"
+    # "user_upload" = question bank / notes uploaded by student
+    # "book" = static syllabus seeded by admin (not user-deletable from UI)
+    source: Mapped[str] = mapped_column(String, nullable=False, default="user_upload")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

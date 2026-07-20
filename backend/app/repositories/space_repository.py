@@ -52,7 +52,10 @@ class SpaceRepository:
                 LearningSpace.subject == subject,
             )
         )
-        return result.scalar_one_or_none()
+        # Use first() instead of scalar_one_or_none() to handle any duplicate
+        # rows that may exist in the database without crashing.
+        return result.scalars().first()
+
 
     # ── Chat Messages ──────────────────────────────────────────────────────────
 

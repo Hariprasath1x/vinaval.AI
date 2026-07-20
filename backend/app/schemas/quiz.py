@@ -22,7 +22,8 @@ class QuestionOut(BaseModel):
 
 class GenerateQuestionsRequest(BaseModel):
     topic: str
-    count: int = 5   # 1–10
+    count: int = 5   # 1–30
+    lang: str = "en"  # "en" (English) or "ta" (Tamil)
 
 
 class SubmitAnswerRequest(BaseModel):
@@ -51,3 +52,16 @@ class SpaceStats(BaseModel):
     correct_all: int
     accuracy_all: float
     topics_practiced: List[str]
+
+
+class QuizReviewItem(BaseModel):
+    topic: str
+    is_correct: bool
+
+
+class QuizReviewRequest(BaseModel):
+    results: List[QuizReviewItem]
+
+
+class QuizReviewResponse(BaseModel):
+    review: str

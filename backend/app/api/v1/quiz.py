@@ -13,6 +13,8 @@ from app.schemas.quiz import (
     SubmitAnswerRequest,
     AnswerResult,
     SpaceStats,
+    QuizReviewRequest,
+    QuizReviewResponse,
 )
 
 router = APIRouter(prefix="/spaces", tags=["Quiz"])
@@ -71,3 +73,17 @@ async def get_stats(
     await space_svc.get_space(space_id, current_user.id)
     quiz_svc = QuizService(db)
     return await quiz_svc.get_stats(space_id)
+
+
+@router.post("/{space_id}/quiz/review", response_model=QuizReviewResponse)
+async def get_quiz_review(
+    space_id: int,
+    body: QuizReviewRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Generate an AI-powered performance review based on recent quiz results."""
+    space_svc = SpaceService(db)
+    space = await space_svc.get_space(space_id, current_user.id)
+    quiz_svc = QuizService(db)
+    return await quiz_svc.generate_review(space, body)

@@ -1,23 +1,6 @@
 version: '3.9'
 
 services:
-  postgres:
-    image: postgres:16-alpine
-    container_name: vinavalai_postgres
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: vinavalai
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
   backend:
     build:
       context: ./backend
@@ -30,9 +13,7 @@ services:
     volumes:
       - ./backend:/app
       - chroma_data:/app/chroma_data
-    depends_on:
-      postgres:
-        condition: service_healthy
+      - ./books:/app/books
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
   frontend:
@@ -46,7 +27,8 @@ services:
       - ./frontend/.env
     volumes:
       - ./frontend:/app
+    depends_on:
+      - backend
 
 volumes:
-  postgres_data:
   chroma_data:

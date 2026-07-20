@@ -1,8 +1,28 @@
+import bcrypt
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.firebase import verify_firebase_token
 from app.core.security import create_access_token
 from app.repositories.user_repository import UserRepository
-from app.schemas.auth import UserCreate, TokenResponse, UserResponse
+from app.schemas.auth import UserCreate, TokenResponse, UserResponse, SignupRequest, LoginRequest
+
+
+def _hash_password(plain: str) -> str:
+    pwd_bytes = plain.encode('utf-8')[:72]
+    return bcrypt.hashpw(pwd_bytes, bcrypt.gensalt()).decode('utf-8')
+
+
+def _verify_password(plain: str, hashed: str) -> bool:
+    if not hashed:
+        return False
+    try:
+        pwd_bytes = plain.encode('utf-8')[:72]
+        hashed_bytes = hashed.encode('utf-8')
+        return bcrypt.checkpw(pwd_bytes, hashed_bytes)
+    except Exception:
+        return False
+
+
 
 
 class AuthService:
@@ -10,52 +30,99 @@ class AuthService:
         self.db = db
         self.repo = UserRepository(db)
 
-    async def login_with_firebase(self, id_token: str) -> TokenResponse:
-        """
-        Verify a Firebase ID token, upsert the user in PostgreSQL,
-        and return a short-lived JWT for all subsequent API calls.
-        """
-        # Step 1: Verify Firebase ID token → get user info
-        user_info = verify_firebase_token(id_token)
+    # ── Email / Password Sign-Up ──────────────────────────────────────────────
 
-        # Step 2: Upsert user in our DB (create on first login, skip on repeat)
-        user = await self.repo.get_by_google_id(user_info["uid"])
-        if not user:
-            user = await self.repo.create(
-                UserCreate(
-                    google_id=user_info["uid"],
-                    email=user_info["email"],
-                    name=user_info["name"],
-                    avatar_url=user_info.get("picture"),
+    async def signup(self, req: SignupRequest) -> TokenResponse:
+        """Register a new user with email + password."""
+        existing = await self.repo.get_by_email(req.email)
+        if existing:
+            if not existing.hashed_password:
+                # User existed without a password (legacy Google account). Set password now.
+                existing.hashed_password = _hash_password(req.password)
+                if req.name:
+                    existing.name = req.name
+                await self.db.commit()
+                await self.db.refresh(existing)
+                access_token = create_access_token(data={"sub": str(existing.id)})
+                return TokenResponse(
+                    access_token=access_token,
+                    user=UserResponse.model_validate(existing),
                 )
+            raise ValueError("An account with this email already exists. Please log in.")
+
+        hashed = _hash_password(req.password)
+        user = await self.repo.create(
+            UserCreate(
+                email=req.email,
+                name=req.name,
+                hashed_password=hashed,
             )
-
-        # Step 3: Issue our own JWT — backend is no longer Firebase-dependent
+        )
         access_token = create_access_token(data={"sub": str(user.id)})
-
         return TokenResponse(
             access_token=access_token,
             user=UserResponse.model_validate(user),
         )
 
-    async def login_mock(self, email: str) -> TokenResponse:
-        """
-        Mock login for Streamlit frontend development.
-        Bypasses Firebase and creates/fetches a dummy user.
-        """
-        user = await self.repo.get_by_google_id(email)
-        if not user:
-            user = await self.repo.create(
-                UserCreate(
-                    google_id=email,
-                    email=email,
-                    name=email.split("@")[0],
-                    avatar_url=None,
-                )
-            )
-            
-        access_token = create_access_token(data={"sub": str(user.id)})
+    # ── Email / Password Login ────────────────────────────────────────────────
 
+    async def login(self, req: LoginRequest) -> TokenResponse:
+        """Authenticate a user by email and password."""
+        user = await self.repo.get_by_email(req.email)
+
+        if not user:
+            raise ValueError("No account found with this email. Please sign up first.")
+
+        # Google-only accounts (no password set) → direct to Google Sign-In
+        if user.google_id and not user.hashed_password:
+            raise ValueError(
+                "This account uses Google Sign-In. "
+                "Please click 'Continue with Google' to log in."
+            )
+
+        if not user.hashed_password:
+            raise ValueError(
+                "No password set for this account. "
+                "Please use 'Forgot Password' to set one, or sign up again."
+            )
+
+        if not _verify_password(req.password, user.hashed_password):
+            raise ValueError("Incorrect password. Please try again.")
+
+        access_token = create_access_token(data={"sub": str(user.id)})
+        return TokenResponse(
+            access_token=access_token,
+            user=UserResponse.model_validate(user),
+        )
+
+
+
+    # ── Firebase (Google OAuth) ───────────────────────────────────────────────
+
+    async def login_with_firebase(self, id_token: str) -> TokenResponse:
+        """Verify a Firebase ID token, upsert the user, return a JWT."""
+        user_info = verify_firebase_token(id_token)
+
+        user = await self.repo.get_by_google_id(user_info["uid"])
+        if not user:
+            # Check if email already exists (e.g., signed up via email/pw)
+            user = await self.repo.get_by_email(user_info["email"])
+            if user:
+                # Link Google ID to existing account
+                user.google_id = user_info["uid"]
+                await self.db.commit()
+                await self.db.refresh(user)
+            else:
+                user = await self.repo.create(
+                    UserCreate(
+                        google_id=user_info["uid"],
+                        email=user_info["email"],
+                        name=user_info["name"],
+                        avatar_url=user_info.get("picture"),
+                    )
+                )
+
+        access_token = create_access_token(data={"sub": str(user.id)})
         return TokenResponse(
             access_token=access_token,
             user=UserResponse.model_validate(user),

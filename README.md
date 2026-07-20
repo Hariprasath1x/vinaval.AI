@@ -1,115 +1,88 @@
-# Vinaval AI
+# Vinaval AI — Learning Arena
 
-> AI-Powered Learning Arena for Tamil Nadu Aspirants (NEET & TNPSC)
-
-## Project Structure
-
-```
-vinavalai/
-├── frontend/          # Streamlit Multi-Page App (Python)
-├── frontend_react/    # Legacy React + Vite + TypeScript (Backup)
-├── backend/           # FastAPI + SQLAlchemy + ChromaDB
-├── docker-compose.yml
-└── README.md
-```
-
-## Quick Start
-
-### Prerequisites
-- Python 3.11+
-- PostgreSQL 16+
-- Docker & Docker Compose (recommended)
+Welcome to **Vinaval AI**! This is a smart, AI-powered learning platform designed for students preparing for competitive exams like NEET and TNPSC in Tamil Nadu. It offers a bilingual (English and Tamil) AI tutor, custom flashcards, and practice quizzes based on official syllabus books and your own uploaded notes.
 
 ---
 
-### Option A — Docker (Recommended)
+## 📖 How It Works (The Flow)
+
+Think of this app as having two main pieces working together: a **Frontend** (what you see and click) and a **Backend** (the brain that does the heavy lifting). 
+
+1. **You log in:** You can sign in using your Email or a Google account. The frontend talks to Firebase and the backend to securely log you in.
+2. **You pick a Learning Space:** You select an exam (like NEET) and a subject (like Physics). This opens up your personalized study dashboard.
+3. **You chat with the AI:** When you ask a question, the backend searches through its database (ChromaDB) to find relevant paragraphs from the official syllabus books. It sends these paragraphs to a super-smart AI model (Llama 3 via Groq) which reads them and answers your question in either English or Tamil.
+4. **You upload your own notes:** If you have special PDF notes or question banks, you can upload them! The backend reads the text, chops it into smaller chunks, and saves it. Now, the AI will use your notes to answer your questions too!
+5. **You practice:** You can generate flashcards and quizzes. The AI creates them instantly based on the books and your uploads. When you take a quiz, you get graded and receive a personalized AI review of your performance.
+
+---
+
+## 🛠️ The Technology Stack
+
+We keep things modern, fast, and lightweight:
+
+*   **Frontend (The Face):** Built with **Streamlit** (Python). It’s super fast for building AI apps without needing complex JavaScript frameworks.
+*   **Backend (The Brain):** Built with **FastAPI** (Python). It handles all the API requests, user uploads, and talks to the AI.
+*   **Main Database:** We use **SQLite** (`vinavalai.db`). It stores user accounts, chat history, quiz attempts, and saved flashcards. 
+*   **Vector Database (For AI Memory):** We use **ChromaDB**. When you upload a book or notes, it converts the text into "embeddings" (a format the AI understands) so it can search through thousands of pages in milliseconds. We use a special multilingual model so it understands Tamil perfectly.
+*   **The AI Engine:** Powered by **Groq** using the **Llama 3 70B** model. It's incredibly fast and smart.
+
+---
+
+## 🚀 How to Run the App
+
+The absolute easiest way to run the app is using the provided start scripts. You don't need Docker for everyday local development!
+
+### Option 1: One-Click Start (Windows/Mac/Linux)
+
+**If you are on Windows:**
+Just double-click the `start.bat` file in the main folder! It will automatically start both the backend and the frontend in separate windows.
+
+**If you are on Mac/Linux:**
+Run the shell script in your terminal:
+```bash
+./start.sh
+```
+
+### Option 2: Run Using Docker
+If you want to run the app in a completely isolated environment (like if you are deploying to a server), you can use Docker.
 
 ```bash
-# 1. Copy env files
-cp backend/.env.example backend/.env
-cp frontend/.env.example frontend/.env
-
-# 2. Fill in your secrets in both .env files
-# 3. Start all services
 docker-compose up --build
 ```
 
-App will be available at:
-- Frontend (Streamlit): http://localhost:8501
-- Backend API: http://localhost:8000
-- API Docs: http://localhost:8000/docs
+---
+
+## 🌐 Where to view the app
+
+Once started, open your web browser and go to:
+*   **The App (Streamlit Frontend):** `http://localhost:8501`
+*   *(The Backend runs silently in the background at `http://localhost:8000`)*
 
 ---
 
-### Option B — Local Development
+## 🔑 Environment Variables
+Make sure you have your API keys set up before running!
 
-**Backend**
+**In `backend/.env`:**
+*   `GROQ_API_KEY` - Your key from Groq to power the AI.
+*   `GROQ_MODEL` - We recommend `llama-3.3-70b-versatile`.
+*   *(Make sure `firebase-service-account.json` is also in the backend folder!)*
+
+**In `frontend/.env`:**
+*   `API_URL` - Set to `http://localhost:8000/api/v1`
+
+---
+
+## 📚 Adding Official Syllabus Books
+
+As an admin, you can load official textbooks into the database so all students can learn from them. The AI will use these books to answer questions.
+
 ```bash
 cd backend
-python -m venv venv
-venv\Scripts\activate   # Windows
-pip install -r requirements.txt
-cp .env.example .env    # fill in values
 
-# Run migrations
-alembic upgrade head
+# Seed a NEET Physics textbook (English)
+python scripts/seed_books.py --exam NEET --subject Physics --lang en --file /path/to/physics.pdf --title "NCERT Physics"
 
-# Start server
-uvicorn app.main:app --reload --port 8000
+# Seed a TNPSC History guide (Tamil)
+python scripts/seed_books.py --exam TNPSC --subject History --lang ta --file /path/to/history_tamil.pdf
 ```
-
-**Frontend (Streamlit)**
-```bash
-cd frontend
-python -m venv venv
-venv\Scripts\activate   # Windows
-pip install -r requirements.txt
-cp .env.example .env    # fill in values (API_URL=http://localhost:8000/api/v1)
-streamlit run app.py
-```
-
----
-
-## Environment Variables
-
-### Backend (`backend/.env`)
-| Variable | Description |
-|---|---|
-| `DATABASE_URL` | PostgreSQL async connection string |
-| `SECRET_KEY` | JWT signing secret (generate a strong random key) |
-| `GOOGLE_CLIENT_ID` | Google OAuth Client ID |
-| `GOOGLE_CLIENT_SECRET` | Google OAuth Client Secret |
-| `GROQ_API_KEY` | Groq API key |
-
-### Frontend (`frontend/.env`)
-| Variable | Description |
-|---|---|
-| `API_URL` | URL to FastAPI backend (e.g., http://localhost:8000/api/v1) |
-
----
-
-## Authentication (Mock Login)
-
-Currently, the Streamlit frontend uses a **Mock Login** system that bypasses Firebase for rapid development. 
-
-To log in:
-1. Navigate to the Streamlit Home Page (`http://localhost:8501`).
-2. Enter any valid email (e.g., `test@example.com`).
-3. The system will automatically generate a mock user in PostgreSQL and issue a JWT token for all API access.
-
-*(Note: The legacy React app used Firebase Google Auth. To restore Firebase, you'll need to adapt the `auth_service.py` back to using `login_with_firebase` and build a custom Firebase OAuth component for Streamlit).*
-
----
-
-
-| Layer | Technology |
-|---|---|
-| Frontend | Streamlit, Python, requests |
-| State | Streamlit Session State |
-| Backend | FastAPI, SQLAlchemy (async), Alembic |
-| Database | PostgreSQL |
-| Vector DB | ChromaDB |
-| Embeddings | BAAI/bge-small-en-v1.5 |
-| LLM | Groq (Llama 3 70B) |
-| Auth | Google OAuth 2.0 + JWT |
-| Deployment | Docker + Docker Compose |

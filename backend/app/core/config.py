@@ -20,13 +20,13 @@ class Settings(BaseSettings):
 
     # Groq
     GROQ_API_KEY: str
-    GROQ_MODEL: str = "llama3-70b-8192"
+    GROQ_MODEL: str = "llama-3.3-70b-versatile"
 
     # ChromaDB
     CHROMA_PERSIST_DIR: str = "./chroma_data"
 
     # Frontend
-    FRONTEND_URL: str = "http://localhost:5173"
+    FRONTEND_URL: str = "http://localhost:8501"
 
     class Config:
         env_file = ".env"

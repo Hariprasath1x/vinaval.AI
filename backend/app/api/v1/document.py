@@ -22,7 +22,11 @@ async def upload_document(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Upload a document, extract text, and index it into ChromaDB for RAG."""
+    """
+    Upload a user document (question bank, topic notes, practice paper).
+    The file is indexed into ChromaDB alongside the pre-seeded book data.
+    The RAG chain will use BOTH book content + user uploads when answering questions.
+    """
     # Verify space access
     space_svc = SpaceService(db)
     space = await space_svc.get_space(space_id, current_user.id)
@@ -48,7 +52,8 @@ async def upload_document(
     new_doc = SpaceDocument(
         space_id=space_id,
         filename=file.filename,
-        file_type=ext[1:]
+        file_type=ext[1:],
+        source="user_upload",  # distinguish from pre-seeded book chunks
     )
     db.add(new_doc)
     await db.commit()
@@ -82,6 +87,7 @@ async def upload_document(
         "id": new_doc.id,
         "filename": new_doc.filename,
         "file_type": new_doc.file_type,
+        "source": new_doc.source,
         "created_at": new_doc.created_at
     }
 
@@ -103,6 +109,7 @@ async def list_documents(
             "id": d.id,
             "filename": d.filename,
             "file_type": d.file_type,
+            "source": d.source,
             "created_at": d.created_at
         } for d in docs
     ]

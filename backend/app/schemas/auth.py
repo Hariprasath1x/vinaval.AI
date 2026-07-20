@@ -10,7 +10,8 @@ class UserBase(BaseModel):
 
 
 class UserCreate(UserBase):
-    google_id: str
+    google_id: Optional[str] = None
+    hashed_password: Optional[str] = None
 
 
 class UserResponse(UserBase):
@@ -27,6 +28,21 @@ class TokenResponse(BaseModel):
     token_type: str = "bearer"
     user: UserResponse
 
+
+# ── Email / Password Auth ─────────────────────────────────────────────────────
+
+class SignupRequest(BaseModel):
+    name: str
+    email: EmailStr
+    password: str   # plain-text, will be hashed server-side
+
+
+class LoginRequest(BaseModel):
+    email: EmailStr
+    password: str
+
+
+# ── Google OAuth (kept for legacy / future use) ───────────────────────────────
 
 class GoogleCallbackRequest(BaseModel):
     code: str
