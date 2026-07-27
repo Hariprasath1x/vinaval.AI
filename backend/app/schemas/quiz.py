@@ -21,7 +21,7 @@ class QuestionOut(BaseModel):
 
 
 class GenerateQuestionsRequest(BaseModel):
-    topic: str
+    topic: Optional[str] = None
     count: int = 5   # 1–30
     lang: str = "en"  # "en" (English) or "ta" (Tamil)
 

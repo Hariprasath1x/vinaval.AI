@@ -1,6 +1,12 @@
 """
 3_Space.py — The main Learning Space dashboard.
 Five tabs: Learn (RAG Chat), Materials (Upload), Flashcards, Exam Lab (Quiz), Reports.
+
+Additions:
+  - NEET topic dropdowns for Flashcards & Quiz
+  - Leitner spaced-repetition flashcard session mode
+  - Mock Exam countdown timer
+  - Explanations shown for ALL quiz questions (not just wrong ones)
 """
 import streamlit as st
 import sys
@@ -58,11 +64,84 @@ exam_id  = space.get("exam_id", "")
 subject  = space.get("subject", "")
 title    = space.get("title", f"{exam_id} · {subject}")
 
+# ── NEET Topic Catalogue ──────────────────────────────────────────────────────
+# Predefined chapter-level topics for each NEET subject so students can
+# pick from a dropdown instead of typing freeform text.
+
+NEET_TOPICS = {
+    "Physics": [
+        "Physical World and Units", "Motion in a Straight Line", "Motion in a Plane",
+        "Laws of Motion", "Work, Energy and Power", "System of Particles & Rotational Motion",
+        "Gravitation", "Mechanical Properties of Solids", "Mechanical Properties of Fluids",
+        "Thermal Properties of Matter", "Thermodynamics", "Kinetic Theory of Gases",
+        "Oscillations", "Waves", "Electric Charges and Fields", "Electrostatic Potential and Capacitance",
+        "Current Electricity", "Moving Charges and Magnetism", "Magnetism and Matter",
+        "Electromagnetic Induction", "Alternating Current", "Electromagnetic Waves",
+        "Ray Optics and Optical Instruments", "Wave Optics",
+        "Dual Nature of Radiation and Matter", "Atoms", "Nuclei",
+        "Semiconductor Electronics", "Communication Systems",
+    ],
+    "Chemistry": [
+        "Some Basic Concepts of Chemistry", "Structure of Atom", "Classification of Elements",
+        "Chemical Bonding and Molecular Structure", "States of Matter", "Thermodynamics",
+        "Equilibrium", "Redox Reactions", "Hydrogen",
+        "The s-Block Elements", "The p-Block Elements", "Organic Chemistry Basics",
+        "Hydrocarbons", "Environmental Chemistry",
+        "Solid State", "Solutions", "Electrochemistry", "Chemical Kinetics",
+        "Surface Chemistry", "General Principles of Extraction of Metals",
+        "The p-Block Elements (Period 3)", "The d and f Block Elements",
+        "Coordination Compounds", "Haloalkanes and Haloarenes",
+        "Alcohols, Phenols and Ethers", "Aldehydes, Ketones and Carboxylic Acids",
+        "Amines", "Biomolecules", "Polymers", "Chemistry in Everyday Life",
+    ],
+    "Botany": [
+        "The Living World", "Biological Classification", "Plant Kingdom",
+        "Morphology of Flowering Plants", "Anatomy of Flowering Plants",
+        "Cell: The Unit of Life", "Cell Cycle and Cell Division",
+        "Photosynthesis in Higher Plants", "Respiration in Plants",
+        "Plant Growth and Development", "Transport in Plants",
+        "Mineral Nutrition", "Sexual Reproduction in Flowering Plants",
+        "Principles of Inheritance and Variation", "Molecular Basis of Inheritance",
+        "Evolution", "Strategies for Enhancement in Food Production",
+        "Microbes in Human Welfare", "Biotechnology: Principles and Processes",
+        "Biotechnology and its Applications", "Organisms and Populations",
+        "Ecosystem", "Biodiversity and Conservation", "Environmental Issues",
+    ],
+    "Zoology": [
+        "Animal Kingdom", "Structural Organisation in Animals",
+        "Human Physiology: Digestion and Absorption",
+        "Human Physiology: Breathing and Exchange of Gases",
+        "Human Physiology: Body Fluids and Circulation",
+        "Human Physiology: Excretory Products and their Elimination",
+        "Human Physiology: Locomotion and Movement",
+        "Human Physiology: Neural Control and Coordination",
+        "Human Physiology: Chemical Coordination and Integration",
+        "Human Reproduction", "Reproductive Health",
+        "Genetics and Evolution", "Human Health and Disease",
+        "Animal Husbandry", "Biodiversity and Conservation",
+        "Environmental Issues",
+    ],
+    "Bio Chemistry": [
+        "Biomolecules — Carbohydrates", "Biomolecules — Proteins",
+        "Biomolecules — Lipids", "Biomolecules — Nucleic Acids",
+        "Enzymes", "Vitamins and Minerals",
+        "Metabolism Overview", "Glycolysis", "Krebs Cycle / TCA Cycle",
+        "Oxidative Phosphorylation", "Gluconeogenesis",
+        "Fatty Acid Synthesis and Oxidation", "Amino Acid Metabolism",
+        "Nitrogen Metabolism", "Hormones and Signal Transduction",
+        "DNA Replication and Repair", "Transcription", "Translation",
+        "Regulation of Gene Expression", "Metabolic Disorders",
+    ],
+}
+
+def _get_topics(subj: str):
+    return NEET_TOPICS.get(subj, [])
+
 # ── Header ────────────────────────────────────────────────────────────────────
 
 col_title, col_nav = st.columns([3, 1])
 with col_title:
-    st.title(f"📖 {exam_id} — {subject}")
+    st.title(f"📖 {subject}")
     st.caption(f"Space ID: {space_id} | Use the tabs below to learn, upload material, and practise.")
 with col_nav:
     st.page_link("pages/1_Dashboard.py", label="← Back to Dashboard")
@@ -133,7 +212,7 @@ with tab_learn:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-#  TAB 2 — MATERIALS  (User Uploads — question banks, notes, practice papers)
+#  TAB 2 — MATERIALS  (User Uploads)
 # ─────────────────────────────────────────────────────────────────────────────
 
 with tab_materials:
@@ -183,7 +262,7 @@ with tab_materials:
                 st.caption(doc["file_type"].upper())
             with col_action:
                 if doc.get("source") == "book":
-                    st.caption("📚 Book")  # Admin-seeded books can't be deleted
+                    st.caption("📚 Book")
                 else:
                     if st.button("🗑️", key=f"del_{doc['id']}", help="Delete this document"):
                         if delete_document(space_id, doc["id"]):
@@ -192,55 +271,77 @@ with tab_materials:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-#  TAB 3 — FLASHCARDS
+#  TAB 3 — FLASHCARDS  (with Leitner spaced repetition + topic dropdown)
 # ─────────────────────────────────────────────────────────────────────────────
 
 with tab_flashcards:
     st.subheader("🃏 Flashcards")
     st.caption(
         "Generate AI-powered flashcards for any topic. "
-        "The AI reads your indexed materials (books + uploads) to create accurate cards."
+        "Rate each card — Hard cards repeat until you master them!"
     )
+
+    avail_topics = _get_topics(subject)
 
     # ── Generate new set
     with st.form("flashcard_form"):
         col_topic, col_count, col_lang = st.columns([2, 1, 1])
         with col_topic:
-            fc_topic = st.text_input(
-                "Topic",
-                placeholder=f"e.g. Photosynthesis, Newton's Laws...",
-                help="Enter a topic from the syllabus.",
-            )
+            if avail_topics:
+                topic_options = avail_topics + ["✏️ Custom (type below)"]
+                fc_topic_choice = st.selectbox("Chapter / Topic", topic_options)
+                fc_custom = st.text_input(
+                    "Custom topic",
+                    placeholder="Type your custom topic here...",
+                    help="Only used if you selected 'Custom' above.",
+                )
+                fc_topic = fc_custom.strip() if fc_topic_choice.startswith("✏️") else fc_topic_choice
+            else:
+                fc_topic = st.text_input(
+                    "Topic",
+                    placeholder="e.g. Photosynthesis, Newton's Laws...",
+                )
         with col_count:
             fc_count = st.number_input("# Cards", min_value=2, max_value=20, value=8)
         with col_lang:
             fc_lang_display = st.selectbox("Language", ["English", "Tamil (தமிழ்)"])
             fc_lang = "ta" if "Tamil" in fc_lang_display else "en"
-            
+
         gen_submit = st.form_submit_button("✨ Generate Flashcards", type="primary")
 
-    if gen_submit and fc_topic:
-        with st.spinner(f"Generating {fc_count} flashcards for '{fc_topic}' in {fc_lang_display}..."):
-            cards = generate_flashcards(space_id, fc_topic.strip(), fc_count, lang=fc_lang)
-        if cards:
-            st.success(f"✅ Generated {len(cards)} flashcards!")
-            st.session_state["fc_active_cards"] = cards
-            st.session_state["fc_active_topic"] = fc_topic.strip()
-            st.session_state["fc_index"] = 0
-            st.session_state["fc_show_back"] = False
-    elif gen_submit:
-        st.warning("Please enter a topic first.")
+    if gen_submit:
+        if not fc_topic:
+            st.warning("Please select or enter a topic first.")
+        else:
+            with st.spinner(f"Generating {fc_count} flashcards for '{fc_topic}' in {fc_lang_display}..."):
+                cards = generate_flashcards(space_id, fc_topic.strip(), fc_count, lang=fc_lang)
+            if cards:
+                st.success(f"✅ Generated {len(cards)} flashcards!")
+                # Initialise the Leitner session queue — a list of card dicts
+                st.session_state["fc_queue"] = list(cards)
+                st.session_state["fc_mastered"] = 0
+                st.session_state["fc_total"] = len(cards)
+                st.session_state["fc_active_topic"] = fc_topic.strip()
+                st.session_state["fc_show_back"] = False
+                # Remove legacy state
+                st.session_state.pop("fc_active_cards", None)
 
-    # ── Flashcard Viewer (flip-card style)
-    if "fc_active_cards" in st.session_state:
-        cards = st.session_state.fc_active_cards
-        idx = st.session_state.get("fc_index", 0)
+    # ── Leitner Flashcard Session
+    if st.session_state.get("fc_queue"):
+        queue = st.session_state["fc_queue"]
+        mastered = st.session_state.get("fc_mastered", 0)
+        total = st.session_state.get("fc_total", len(queue))
         show_back = st.session_state.get("fc_show_back", False)
 
         st.divider()
-        st.markdown(f"**Topic:** {st.session_state.get('fc_active_topic', '')}   |   Card **{idx+1}** of **{len(cards)}**")
+        remaining = len(queue)
+        st.markdown(
+            f"**Topic:** {st.session_state.get('fc_active_topic', '')}  |  "
+            f"✅ Mastered: **{mastered}/{total}**  |  🔁 Remaining: **{remaining}**"
+        )
+        st.progress(mastered / total if total > 0 else 0)
 
-        card = cards[idx]
+        card = queue[0]
         with st.container(border=True):
             if not show_back:
                 st.markdown(f"### 📋 Front\n\n{card['front']}")
@@ -248,25 +349,37 @@ with tab_flashcards:
             else:
                 st.markdown(f"### 💡 Back\n\n{card['back']}")
 
-        col_flip, col_prev, col_next = st.columns([2, 1, 1])
+        col_flip, col_hard, col_easy = st.columns([2, 1, 1])
         with col_flip:
-            if st.button(
-                "🔄 Flip Card",
-                use_container_width=True,
-                type="primary",
-            ):
-                st.session_state.fc_show_back = not show_back
+            if st.button("🔄 Flip Card", use_container_width=True, type="primary"):
+                st.session_state["fc_show_back"] = not show_back
                 st.rerun()
-        with col_prev:
-            if st.button("⬅️ Prev", disabled=(idx == 0), use_container_width=True):
-                st.session_state.fc_index = idx - 1
-                st.session_state.fc_show_back = False
+        with col_hard:
+            if st.button("❌ Hard — Again", use_container_width=True, disabled=not show_back,
+                         help="I don't know this — move it to the back of the deck"):
+                # Move current card to back of queue so it repeats
+                card_to_repeat = st.session_state["fc_queue"].pop(0)
+                st.session_state["fc_queue"].append(card_to_repeat)
+                st.session_state["fc_show_back"] = False
                 st.rerun()
-        with col_next:
-            if st.button("Next ➡️", disabled=(idx == len(cards)-1), use_container_width=True):
-                st.session_state.fc_index = idx + 1
-                st.session_state.fc_show_back = False
+        with col_easy:
+            if st.button("✅ Got it!", use_container_width=True, disabled=not show_back,
+                         help="I know this — remove from deck"):
+                st.session_state["fc_queue"].pop(0)
+                st.session_state["fc_mastered"] += 1
+                st.session_state["fc_show_back"] = False
                 st.rerun()
+
+    elif "fc_total" in st.session_state and st.session_state.get("fc_mastered", 0) > 0:
+        # Session completed!
+        total = st.session_state.get("fc_total", 0)
+        st.divider()
+        st.balloons()
+        st.success(f"🎉 Congratulations! You mastered all **{total}** cards in this session!")
+        if st.button("🔁 Start a New Session"):
+            for key in ["fc_queue", "fc_mastered", "fc_total", "fc_active_topic", "fc_show_back"]:
+                st.session_state.pop(key, None)
+            st.rerun()
 
     # ── Previously saved flashcard sets
     st.divider()
@@ -280,18 +393,22 @@ with tab_flashcards:
                 with st.spinner(f"Loading flashcards for '{t}'..."):
                     saved_cards = list_flashcards(space_id, t)
                 if saved_cards:
-                    st.session_state["fc_active_cards"] = [
-                        {"front": c["front"], "back": c["back"]} for c in saved_cards
-                    ]
+                    loaded = [{"front": c["front"], "back": c["back"]} for c in saved_cards]
+                    st.session_state["fc_queue"] = list(loaded)
+                    st.session_state["fc_mastered"] = 0
+                    st.session_state["fc_total"] = len(loaded)
                     st.session_state["fc_active_topic"] = t
-                    st.session_state["fc_index"] = 0
                     st.session_state["fc_show_back"] = False
+                    st.session_state.pop("fc_active_cards", None)
                     st.rerun()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-#  TAB 4 — EXAM LAB  (MCQ Quiz)
+#  TAB 4 — EXAM LAB  (MCQ Quiz with timer + topic dropdown + all explanations)
 # ─────────────────────────────────────────────────────────────────────────────
+
+# Mock exam duration in seconds (configurable)
+MOCK_EXAM_DURATION_SECONDS = 15 * 60  # 15 minutes
 
 with tab_quiz:
     st.subheader("📝 Exam Lab — Practice MCQs")
@@ -307,33 +424,86 @@ with tab_quiz:
         st.session_state.quiz_submitted = False
 
     with st.form("quiz_form"):
+        st.markdown("**Generate a Practice Quiz or a Full Mock Exam**")
+        quiz_type = st.radio("Mode", ["Practice (by Topic)", "Full Mock Exam (Whole Syllabus)"], horizontal=True)
+        is_mock_exam = "Mock" in quiz_type
+
+        avail_topics_quiz = _get_topics(subject)
         col_qtopic, col_qcount, col_qlang = st.columns([2, 1, 1])
         with col_qtopic:
-            q_topic = st.text_input(
-                "Topic",
-                placeholder="e.g. Cell Division, Thermodynamics...",
-            )
+            if not is_mock_exam and avail_topics_quiz:
+                topic_options_q = avail_topics_quiz + ["✏️ Custom (type below)"]
+                q_topic_choice = st.selectbox(
+                    "Chapter / Topic",
+                    topic_options_q,
+                    disabled=is_mock_exam,
+                )
+                q_custom = st.text_input(
+                    "Custom topic",
+                    placeholder="Type your custom topic...",
+                    disabled=is_mock_exam,
+                )
+                q_topic = q_custom.strip() if q_topic_choice.startswith("✏️") else q_topic_choice
+            else:
+                q_topic = st.text_input(
+                    "Topic",
+                    placeholder="e.g. Cell Division, Thermodynamics...",
+                    disabled=is_mock_exam,
+                )
         with col_qcount:
-            q_count = st.number_input("# Questions", min_value=1, max_value=10, value=5)
+            q_count = st.number_input("# Questions", min_value=1, max_value=30, value=15 if is_mock_exam else 5)
         with col_qlang:
             q_lang_display = st.selectbox("Language", ["English", "Tamil (தமிழ்)"], key="quiz_lang")
             q_lang = "ta" if "Tamil" in q_lang_display else "en"
-            
-        quiz_type = st.radio("Mode", ["Practice (see answers instantly)", "Exam (submit all at end)"], horizontal=True)
-        is_exam = "Exam" in quiz_type
-        q_submit = st.form_submit_button("🎯 Generate Quiz", type="primary")
 
-    if q_submit and q_topic:
-        with st.spinner(f"Generating {q_count} questions on '{q_topic}' in {q_lang_display}..."):
-            questions = generate_quiz(space_id, q_topic.strip(), q_count, lang=q_lang)
-        if questions:
-            st.session_state.quiz_questions = questions
-            st.session_state.quiz_answers = {}
-            st.session_state.quiz_submitted = False
-            st.session_state.quiz_is_exam = is_exam
-            st.session_state.quiz_topic = q_topic.strip()
-    elif q_submit:
-        st.warning("Please enter a topic.")
+        q_submit = st.form_submit_button("🎯 Generate Quiz/Exam", type="primary")
+
+    if q_submit:
+        target_topic = None if is_mock_exam else q_topic.strip()
+        if not is_mock_exam and not target_topic:
+            st.warning("Please select or enter a topic for practice mode.")
+        else:
+            with st.spinner(f"Generating {q_count} questions..."):
+                questions = generate_quiz(space_id, target_topic, q_count, lang=q_lang)
+            if questions:
+                st.session_state.quiz_questions = questions
+                st.session_state.quiz_answers = {}
+                st.session_state.quiz_submitted = False
+                st.session_state.quiz_is_exam = is_mock_exam
+                st.session_state.quiz_topic = "Full Mock Exam" if is_mock_exam else target_topic
+                # Start timer for mock exam
+                if is_mock_exam:
+                    st.session_state.quiz_start_time = time.time()
+                else:
+                    st.session_state.pop("quiz_start_time", None)
+
+    # ── Timer display (mock exam only)
+    if (
+        st.session_state.get("quiz_questions")
+        and st.session_state.get("quiz_is_exam")
+        and not st.session_state.get("quiz_submitted")
+        and "quiz_start_time" in st.session_state
+    ):
+        elapsed = time.time() - st.session_state["quiz_start_time"]
+        remaining_secs = int(MOCK_EXAM_DURATION_SECONDS - elapsed)
+
+        if remaining_secs > 0:
+            mins, secs = divmod(remaining_secs, 60)
+            progress_val = 1.0 - (remaining_secs / MOCK_EXAM_DURATION_SECONDS)
+            if remaining_secs <= 120:
+                st.error(f"⏰ Time remaining: **{mins:02d}:{secs:02d}** — Hurry up!")
+            elif remaining_secs <= 300:
+                st.warning(f"⏳ Time remaining: **{mins:02d}:{secs:02d}**")
+            else:
+                st.info(f"🕐 Time remaining: **{mins:02d}:{secs:02d}**")
+            st.progress(progress_val)
+        else:
+            st.error("⏰ **Time's up!** The exam time limit has been reached.")
+            st.session_state.quiz_submitted = True
+            # Auto-record any unanswered questions as blank
+            for q in st.session_state.quiz_questions:
+                if q["id"] not in st.session_state.quiz_answers:
+                    st.session_state.quiz_answers[q["id"]] = None
 
     # ── Display Quiz Questions
     if st.session_state.quiz_questions:
@@ -341,7 +511,7 @@ with tab_quiz:
         st.markdown(f"**Quiz — {st.session_state.get('quiz_topic', '')}**   ({len(st.session_state.quiz_questions)} questions)")
 
         is_exam_mode = st.session_state.get("quiz_is_exam", False)
-        if not submitted_all:
+        if not st.session_state.quiz_submitted:
             with st.form("quiz_taking_form"):
                 for i, q in enumerate(st.session_state.quiz_questions):
                     with st.container(border=True):
@@ -352,7 +522,6 @@ with tab_quiz:
                             "c": q["option_c"],
                             "d": q["option_d"],
                         }
-                        # We use session state to store answers dynamically inside the form
                         choice = st.radio(
                             f"Select answer for Q{i+1}",
                             options=list(options.keys()),
@@ -366,7 +535,6 @@ with tab_quiz:
                 submit_quiz = st.form_submit_button("📩 Submit Quiz", type="primary", use_container_width=True)
 
                 if submit_quiz:
-                    # Validate all questions have an answer
                     unanswered = [q for q in st.session_state.quiz_questions if st.session_state.get(f"quiz_q_{q['id']}") is None]
                     if unanswered:
                         st.warning("⚠️ Please answer all questions before submitting.")
@@ -380,59 +548,85 @@ with tab_quiz:
                                 if result:
                                     st.session_state[f"exam_result_{q['id']}"] = result
                                     review_results.append({"topic": q["topic"], "is_correct": result["is_correct"]})
-                            
-                            # Generate AI review
+
                             review_text = generate_quiz_review(space_id, review_results)
                             st.session_state.quiz_review = review_text
-                        
+
                         st.session_state.quiz_submitted = True
                         st.rerun()
 
-        # Show Results if submitted
-        if submitted_all:
-            st.success("🎉 Quiz Completed!")
-            
-            # Display Score
-            correct_count = sum(1 for q in st.session_state.quiz_questions if st.session_state.get(f"exam_result_{q['id']}", {}).get("is_correct"))
+        # ── Show Results if submitted
+        if st.session_state.quiz_submitted:
+            correct_count = sum(
+                1 for q in st.session_state.quiz_questions
+                if st.session_state.get(f"exam_result_{q['id']}", {}).get("is_correct")
+            )
             total = len(st.session_state.quiz_questions)
-            st.metric("Final Score", f"{correct_count} / {total} ({(correct_count/total)*100:.0f}%)")
+            pct = (correct_count / total) * 100 if total else 0
 
-            # Display AI Review
+            st.success("🎉 Quiz Completed!")
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Score", f"{correct_count} / {total}")
+            c2.metric("Accuracy", f"{pct:.0f}%")
+            c3.metric("Mode", "🎓 Mock Exam" if is_exam_mode else "🏋️ Practice")
+
+            # AI Review
             if st.session_state.get("quiz_review"):
                 with st.container(border=True):
                     st.markdown("### 🤖 AI Tutor Review")
                     st.markdown(st.session_state.quiz_review)
-            
+
             st.divider()
             st.markdown("### Detailed Results")
             for i, q in enumerate(st.session_state.quiz_questions):
-                with st.container(border=True):
-                    st.markdown(f"**Q{i+1}.** {q['question']}")
-                    
-                    # Show user's answer and result
-                    ans = st.session_state.quiz_answers.get(q["id"])
-                    result_key = f"exam_result_{q['id']}"
-                    
-                    options = {
-                        "a": q["option_a"],
-                        "b": q["option_b"],
-                        "c": q["option_c"],
-                        "d": q["option_d"],
-                    }
-                    for k, v in options.items():
-                        if k == ans:
-                            st.write(f"👉 **{k.upper()}. {v}** *(Your Answer)*")
-                        else:
-                            st.write(f"&nbsp;&nbsp;&nbsp;&nbsp;{k.upper()}. {v}")
+                ans = st.session_state.quiz_answers.get(q["id"])
+                result_key = f"exam_result_{q['id']}"
+                r = st.session_state.get(result_key, {})
+                is_correct = r.get("is_correct", False)
 
-                    if result_key in st.session_state:
-                        r = st.session_state[result_key]
-                        if r["is_correct"]:
-                            st.success("✅ Correct!")
+                options = {
+                    "a": q["option_a"],
+                    "b": q["option_b"],
+                    "c": q["option_c"],
+                    "d": q["option_d"],
+                }
+
+                # Border colour based on correctness
+                with st.container(border=True):
+                    status_icon = "✅" if is_correct else "❌"
+                    st.markdown(f"**{status_icon} Q{i+1}.** {q['question']}")
+
+                    for k, v in options.items():
+                        correct_opt = r.get("correct_option", "")
+                        if k == correct_opt:
+                            prefix = "✅ "
+                        elif k == ans and not is_correct:
+                            prefix = "❌ "
                         else:
-                            st.error(f"❌ Incorrect. Correct answer: **{r['correct_option'].upper()}**")
-                        if r.get("explanation"):
-                            st.info(f"💡 {r['explanation']}")
+                            prefix = "　"
+                        weight = "**" if k in (ans, correct_opt) else ""
+                        st.markdown(f"{prefix}{weight}{k.upper()}. {v}{weight}")
+
+                    if r:
+                        if is_correct:
+                            st.success("Correct!")
+                        else:
+                            st.error(f"Incorrect. Correct answer: **{r.get('correct_option','').upper()}**")
+
+                    # Explanation shown for ALL questions (not only wrong ones)
+                    if r.get("explanation"):
+                        with st.expander("💡 View Explanation"):
+                            st.info(r["explanation"])
+
+            # Option to retry
+            st.divider()
+            if st.button("🔁 Generate a New Quiz"):
+                st.session_state.quiz_questions = []
+                st.session_state.quiz_answers = {}
+                st.session_state.quiz_submitted = False
+                st.session_state.pop("quiz_review", None)
+                st.session_state.pop("quiz_start_time", None)
+                st.rerun()
 
 
 # ─────────────────────────────────────────────────────────────────────────────

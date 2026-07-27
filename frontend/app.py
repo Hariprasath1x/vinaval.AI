@@ -140,7 +140,7 @@ if "token" in st.session_state:
 st.markdown("""
 <div class="brand">
   <div class="brand-title">🎓 Vinaval AI</div>
-  <div class="brand-sub">AI-Powered Learning Arena for NEET &amp; TNPSC Aspirants</div>
+  <div class="brand-sub">AI-Powered Learning Arena for NEET Aspirants</div>
   <div class="pill-row">
     <span class="pill">🧠 AI Tutor</span>
     <span class="pill">🃏 Flashcards</span>

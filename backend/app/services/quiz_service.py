@@ -51,7 +51,7 @@ class QuizService:
             questions.append(
                 QuizQuestion(
                     space_id=space.id,
-                    topic=req.topic,
+                    topic=q.get("topic", req.topic or "Mixed Topics"),
                     question=q["question"],
                     option_a=q["option_a"],
                     option_b=q["option_b"],

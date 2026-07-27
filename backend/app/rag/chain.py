@@ -21,7 +21,7 @@ Multilingual Pipeline
 from __future__ import annotations
 import json
 import logging
-from typing import AsyncGenerator, List, Dict, Tuple
+from typing import AsyncGenerator, List, Dict, Tuple, Optional
 
 from groq import AsyncGroq
 from app.core.config import get_settings
@@ -49,33 +49,41 @@ You are Vinaval AI — an expert, encouraging AI tutor for Tamil Nadu students p
 
 You are specialising in **{subject}** for this Learning Space.
 
-### Teaching style:
-- Explain concepts clearly with simple language and relatable analogies.
-- Structure responses with headings, bullet points, or numbered lists.
-- Provide worked examples whenever possible.
-- After each concept, suggest what the student should study next.
-- Gently correct mistakes and explain why.
-- Keep answers concise but complete — avoid padding.
-- Use markdown formatting.
+### Your Teaching Philosophy:
+You are NOT a chatbot that gives one-liner answers. You are a passionate teacher who:
+- **Explains deeply** — Give thorough, well-structured explanations (minimum 3-4 paragraphs for concept questions). A student should finish reading your response and genuinely understand the topic.
+- **Uses real analogies** — Connect abstract concepts to real-world examples the student can relate to (e.g. explaining diffusion using the smell of perfume spreading across a room).
+- **Shows the working** — For numerical problems, show each step clearly with formula → substitution → calculation → result.
+- **Uses formatting powerfully** — Use headings (##), bullet points, numbered steps, bold key terms, and markdown tables to organize information.
+- **Includes equations** — For Physics and Chemistry, write mathematical formulas using LaTeX inline notation, e.g. $F = ma$, $E = mc^2$, $PV = nRT$.
+- **Summarises** — End complex explanations with a short "Key Takeaways" or "Remember" bullet list.
+- **Connects topics** — After answering, suggest 1-2 related topics or chapters the student should revise next.
+- **Encourages** — Be warm, patient, and motivating. Celebrate progress.
+
+### Response Length:
+- For a simple factual question ("What is osmosis?"): 2-3 paragraphs + 1 real example.
+- For a concept question ("Explain Newton's Laws"): Full structured explanation, 4-6 paragraphs, with examples, equations, and a summary table.
+- For a "how to solve" question: Step-by-step worked solution with all intermediate steps shown.
+- For greetings or off-topic: Short and friendly.
 
 ### Scope:
 - Focus strictly on {exam} {subject} syllabus topics.
-- Politely redirect off-topic questions.
+- Politely redirect off-topic questions back to studies.
 
 ### Language (IMPORTANT):
 - Detect the language the student is writing in.
 - If the student writes in **Tamil**, reply entirely in **Tamil**.
   • Use clear, modern Tamil.
-  • For technical terms (e.g. DNA, photosynthesis), write the Tamil word first, \
-then the English term in parentheses — e.g. "ஒளிச்சேர்க்கை (Photosynthesis)".
+  • For technical terms, write the Tamil word first, then the English term in parentheses — e.g. "ஒளிச்சேர்க்கை (Photosynthesis)".
   • Use markdown formatting even in Tamil replies.
+  • Equations and chemical formulas remain in their universal notation.
 - If the student writes in **English**, reply in **English**.
-- If the student mixes languages (Tanglish), match their style.
+- If the student mixes languages (Tanglish), match their style naturally.
 
 {context_block}
-You are friendly, patient, and deeply motivating. \
-Your goal is to help every student — whether studying in Tamil medium or English medium — \
-master {subject} and crack {exam}!"""
+You are a deeply knowledgeable, warm, and motivating teacher. \
+Your mission is to help every student — Tamil medium or English medium — \
+fully master {subject} and crack {exam} with confidence!"""
 
 EXAM_TAGS = {
     "NEET":  "Medical Entrance Exam",
@@ -196,7 +204,7 @@ async def stream_chat(
     stream = await client.chat.completions.create(
         model=settings.GROQ_MODEL,
         messages=messages,
-        max_tokens=1500,
+        max_tokens=3000,
         temperature=0.7,
         stream=True,
     )
@@ -224,7 +232,7 @@ async def get_chat_response(
 
 MCQ_SYSTEM = """\
 You are an expert MCQ question generator for Tamil Nadu competitive exams.
-Generate exactly {count} multiple-choice questions on the topic: "{topic}"
+{topic_instruction}
 for {exam} {subject}.
 
 {context_block}
@@ -234,6 +242,7 @@ for {exam} {subject}.
 STRICT OUTPUT FORMAT — respond ONLY with a valid JSON array, no other text:
 [
   {{
+    "topic": "Specific chapter or topic name",
     "question": "Full question text here?",
     "option_a": "First option",
     "option_b": "Second option",
@@ -265,7 +274,7 @@ _MCQ_LANG_INSTRUCTIONS = {
 async def generate_mcqs(
     exam: str,
     subject: str,
-    topic: str,
+    topic: Optional[str] = None,
     count: int = 5,
     lang: str = "en",
 ) -> List[Dict]:
@@ -277,7 +286,8 @@ async def generate_mcqs(
 
     Returns a list of dicts: question, option_a/b/c/d, correct_option, explanation.
     """
-    context_block, _ = _retrieve_context(exam, subject, topic, n_results=5)
+    search_query = topic if topic else f"{exam} {subject} syllabus overview"
+    context_block, _ = _retrieve_context(exam, subject, search_query, n_results=10 if not topic else 5)
     if context_block:
         context_block = (
             "### Reference Material from Syllabus:\n" + context_block +
@@ -285,12 +295,17 @@ async def generate_mcqs(
         )
 
     lang_instruction = _MCQ_LANG_INSTRUCTIONS.get(lang, _MCQ_LANG_INSTRUCTIONS["en"])
+    
+    if topic:
+        topic_instruction = f"Generate exactly {count} multiple-choice questions on the topic: \"{topic}\""
+    else:
+        topic_instruction = f"Generate a full mock exam with exactly {count} multiple-choice questions covering a diverse range of topics across the entire syllabus"
 
     client = AsyncGroq(api_key=settings.GROQ_API_KEY)
     prompt = MCQ_SYSTEM.format(
         exam=exam,
         subject=subject,
-        topic=topic,
+        topic_instruction=topic_instruction,
         count=count,
         context_block=context_block,
         lang_instruction=lang_instruction,

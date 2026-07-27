@@ -9,16 +9,16 @@ from app.api.v1 import router as api_v1_router
 
 settings = get_settings()
 
-_FIREBASE_CONFIG_JS = """
-{
+_FIREBASE_CONFIG_JS = """{
   apiKey: "AIzaSyClUultgV7XpYjT1teKAbtchNGpRfqr04A",
   authDomain: "vinavalai.firebaseapp.com",
   projectId: "vinavalai",
   storageBucket: "vinavalai.firebasestorage.app",
   messagingSenderId: "513537593204",
-  appId: "1:513537593204:web:252db2e288e39dddc0e621"
-}
-"""
+  appId: "1:513537593204:web:252db2e288e39dddc0e621",
+  measurementId: "G-RPL46P737E"
+}"""
+
 
 _CDN = "https://www.gstatic.com/firebasejs/10.12.0"
 
@@ -175,6 +175,9 @@ def create_app() -> FastAPI:
     async def google_popup_page():
         return HTMLResponse(content=_GOOGLE_POPUP_HTML)
 
+    @app.get("/", tags=["Root"])
+    async def root():
+        return {"message": "Welcome to VinavalAI API", "docs": "/docs", "health": "/health"}
 
 
     return app

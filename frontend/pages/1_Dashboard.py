@@ -31,7 +31,7 @@ with st.spinner("Loading your spaces..."):
 
 EXAM_ICONS = {"NEET": "🩺", "TNPSC": "🏛️"}
 SUBJECT_ICONS = {
-    "Physics": "⚛️", "Chemistry": "🧪", "Botany": "🌿", "Zoology": "🦎",
+    "Physics": "⚛️", "Chemistry": "🧪", "Botany": "🌿", "Zoology": "🦎", "Bio Chemistry": "🧬",
     "History": "📜", "Geography": "🌍", "Polity": "⚖️",
     "Economics": "📈", "Science": "🔬", "Current Affairs": "📰",
 }
@@ -49,8 +49,7 @@ else:
             exam_icon = EXAM_ICONS.get(exam, "📖")
             subj_icon = SUBJECT_ICONS.get(subj, "📚")
             with st.container(border=True):
-                st.subheader(f"{exam_icon} {exam}")
-                st.markdown(f"{subj_icon} **{subj}**")
+                st.subheader(f"{subj_icon} {subj}")
                 st.caption(f"Created: {space.get('created_at', '')[:10]}")
                 if st.button("Open Space →", key=f"open_{space['id']}", type="primary", use_container_width=True):
                     st.session_state["current_space_id"] = space["id"]

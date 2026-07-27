@@ -301,14 +301,18 @@ def list_flashcard_topics(space_id: int) -> List[str]:
 
 # ── Quiz ──────────────────────────────────────────────────────────────────────
 
-def generate_quiz(space_id: int, topic: str, count: int = 5, lang: str = "en") -> List[Dict]:
+def generate_quiz(space_id: int, topic: Optional[str] = None, count: int = 5, lang: str = "en") -> List[Dict]:
     """
     Generate MCQ questions for a topic, grounded in ChromaDB context.
     """
     try:
+        payload = {"count": count, "lang": lang}
+        if topic:
+            payload["topic"] = topic
+            
         resp = requests.post(
             f"{BASE_URL}/spaces/{space_id}/quiz/generate",
-            json={"topic": topic, "count": count, "lang": lang},
+            json=payload,
             headers=_headers(),
             timeout=60,
         )

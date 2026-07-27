@@ -146,15 +146,40 @@ def get_collections_for_subject(exam: str, subject: str) -> list:
 def delete_document_chunks(exam: str, subject: str, doc_id: int, lang: str | None = None) -> int:
     """
     Remove all ChromaDB chunks that were indexed for a specific document.
-    Chunks are stored with metadata key 'document_id'.
+    Chunks are stored with metadata key 'doc_id'.
+
+    If lang is provided, only the specific language collection is searched.
+    If lang is None (default), all language-variant collections for this
+    exam+subject are searched — needed for user uploads which are indexed
+    into language-specific collections based on auto-detection.
+
     Returns the number of chunks deleted.
     """
     try:
-        collection = get_collection(exam, subject, lang)
-        results = collection.get(where={"doc_id": doc_id})
-        ids = results.get("ids", [])
-        if ids:
-            collection.delete(ids=ids)
-        return len(ids)
+        if lang is not None:
+            # Target a specific collection (e.g. when seeding/deleting a known-language book)
+            collections_to_search = [get_collection(exam, subject, lang)]
+        else:
+            # Search all language variants — covers en, ta, and legacy mixed
+            collections_to_search = get_collections_for_subject(exam, subject)
+            # Also include the legacy mixed collection in case it has chunks
+            try:
+                legacy = get_collection(exam, subject, None)
+                if legacy.count() > 0 and legacy not in collections_to_search:
+                    collections_to_search.append(legacy)
+            except Exception:
+                pass
+
+        total_deleted = 0
+        for collection in collections_to_search:
+            try:
+                results = collection.get(where={"doc_id": doc_id})
+                ids = results.get("ids", [])
+                if ids:
+                    collection.delete(ids=ids)
+                    total_deleted += len(ids)
+            except Exception:
+                pass
+        return total_deleted
     except Exception:
         return 0
