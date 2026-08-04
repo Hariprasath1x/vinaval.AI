@@ -22,12 +22,31 @@ class QuizQuestion(Base):
     attempts = relationship("QuizAttempt", back_populates="question", cascade="all, delete-orphan")
 
 
+class QuizSession(Base):
+    """Represents a single quiz taking session (mock exam or practice)."""
+    __tablename__ = "quiz_sessions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    space_id = Column(Integer, ForeignKey("learning_spaces.id", ondelete="CASCADE"), nullable=False, index=True)
+    topic = Column(String, nullable=True)               # None means full syllabus
+    total_questions = Column(Integer, nullable=False)
+    correct_answers = Column(Integer, nullable=False, default=0)
+    score_pct = Column(Integer, nullable=False, default=0)
+    is_exam = Column(Boolean, nullable=False, default=False)
+    lang = Column(String, nullable=False, default="en")
+    is_completed = Column(Boolean, nullable=False, default=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    attempts = relationship("QuizAttempt", back_populates="session", cascade="all, delete-orphan")
+
+
 class QuizAttempt(Base):
     """Records a user's answer to a single MCQ."""
     __tablename__ = "quiz_attempts"
 
     id = Column(Integer, primary_key=True, index=True)
     space_id = Column(Integer, ForeignKey("learning_spaces.id", ondelete="CASCADE"), nullable=False, index=True)
+    session_id = Column(Integer, ForeignKey("quiz_sessions.id", ondelete="CASCADE"), nullable=True, index=True)
     question_id = Column(Integer, ForeignKey("quiz_questions.id", ondelete="CASCADE"), nullable=False)
     user_answer = Column(String(1), nullable=False)     # "a", "b", "c", or "d"
     is_correct = Column(Boolean, nullable=False)
@@ -36,3 +55,4 @@ class QuizAttempt(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     question = relationship("QuizQuestion", back_populates="attempts")
+    session = relationship("QuizSession", back_populates="attempts")

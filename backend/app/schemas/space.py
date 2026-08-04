@@ -26,6 +26,7 @@ class SpaceOut(BaseModel):
 
 class MessageCreate(BaseModel):
     content: str
+    lang: Optional[str] = "auto"
 
 
 class MessageOut(BaseModel):

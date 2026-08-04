@@ -59,6 +59,16 @@ async def get_space(
     return await service.get_space(space_id, current_user.id)
 
 
+@router.delete("/{space_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_space(
+    space_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Permanently delete a Learning Space and all its associated data."""
+    service = SpaceService(db)
+    await service.delete_space(space_id, current_user.id)
+
 # ── Chat ────────────────────────────────────────────────────────────────────────
 
 @router.post("/{space_id}/chat")
@@ -80,7 +90,7 @@ async def chat(
 
     async def event_stream():
         try:
-            async for chunk in service.stream_ai_response(space, body.content):
+            async for chunk in service.stream_ai_response(space, body.content, body.lang):
                 yield f"data: {json.dumps(chunk)}\n\n"
         except Exception as exc:
             yield f"data: {json.dumps({'error': str(exc)})}\n\n"

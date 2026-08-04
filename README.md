@@ -8,11 +8,11 @@ Welcome to **Vinaval AI**! This is a smart, AI-powered learning platform designe
 
 Think of this app as having two main pieces working together: a **Frontend** (what you see and click) and a **Backend** (the brain that does the heavy lifting). 
 
-1. **You log in:** You can sign in using your Email or a Google account. The frontend talks to Firebase and the backend to securely log you in.
+1. **You log in:** You can sign in using your Email or a Google account. The frontend talks to Firebase and the backend to securely log you in. You can also view and manage your profile details securely in the **Profile** page.
 2. **You pick a Learning Space:** You select an exam (like NEET) and a subject (like Physics). This opens up your personalized study dashboard.
-3. **You chat with the AI:** When you ask a question, the backend searches through its database (ChromaDB) to find relevant paragraphs from the official syllabus books. It sends these paragraphs to a super-smart AI model (Llama 3 via Groq) which reads them and answers your question in either English or Tamil.
+3. **You chat with the AI:** When you ask a question, the backend searches through its database (ChromaDB) to find relevant paragraphs from the official syllabus books. It sends these paragraphs to a super-smart AI model (Llama 3 via Groq) which reads them and answers your question. You can use the **Language Toggle** to force the AI to respond purely in English or purely in Tamil.
 4. **You upload your own notes:** If you have special PDF notes or question banks, you can upload them! The backend reads the text, chops it into smaller chunks, and saves it. Now, the AI will use your notes to answer your questions too!
-5. **You practice:** You can generate flashcards and quizzes. The AI creates them instantly based on the books and your uploads. When you take a quiz, you get graded and receive a personalized AI review of your performance.
+5. **You practice:** You can generate flashcards and quizzes. The AI creates them instantly based on the books and your uploads. When you take a quiz, you get graded and receive a personalized AI review of your performance. All your quiz history is saved and neatly tracked in the **Reports** tab.
 
 ---
 

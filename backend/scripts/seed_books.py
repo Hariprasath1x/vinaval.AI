@@ -45,6 +45,14 @@ import sys
 import uuid
 import re
 
+# Ensure stdout/stderr support UTF-8 on Windows command line
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding='utf-8')
+        sys.stderr.reconfigure(encoding='utf-8')
+    except AttributeError:
+        pass
+
 # Add parent directory to path so we can import app modules
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -114,6 +122,61 @@ def extract_text_from_file(
             except ImportError:
                 return ""
 
+        # --- RapidOCR path (multi-threaded for high speed on scanned PDFs) ---
+        def extract_with_ocr() -> str:
+            try:
+                import fitz
+                import numpy as np
+                import cv2
+                from rapidocr_onnxruntime import RapidOCR
+                from concurrent.futures import ThreadPoolExecutor, as_completed
+
+                doc = fitz.open(file_path)
+                total_pages = len(doc)
+                start_idx = max(0, start_page - 1)
+                end_idx = min(total_pages, end_page) if end_page else total_pages
+                page_indices = list(range(start_idx, end_idx))
+                total_to_process = len(page_indices)
+
+                # Pre-render page pixmaps (fast in PyMuPDF)
+                print(f"   [RapidOCR] Pre-rendering {total_to_process} pages...")
+                images = []
+                for idx in page_indices:
+                    pix = doc[idx].get_pixmap(dpi=110)
+                    img = cv2.cvtColor(np.frombuffer(pix.samples, dtype=np.uint8).reshape((pix.height, pix.width, 3)), cv2.COLOR_RGB2BGR)
+                    images.append((idx, img))
+                doc.close()
+
+                print(f"   [RapidOCR] Multi-threaded OCR on {total_to_process} pages (4 parallel workers)...")
+
+                def ocr_single_page(item):
+                    page_num, img = item
+                    engine = RapidOCR()
+                    result, _ = engine(img)
+                    if result:
+                        page_text = "\n".join([line[1] for line in result if line and len(line) > 1])
+                        return page_num, page_text
+                    return page_num, ""
+
+                results_map = {}
+                completed = 0
+                max_workers = min(6, os.cpu_count() or 4)
+                with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                    futures = [executor.submit(ocr_single_page, item) for item in images]
+                    for future in as_completed(futures):
+                        p_num, p_text = future.result()
+                        results_map[p_num] = p_text
+                        completed += 1
+                        print(f"\r   [RapidOCR] Progress: {completed}/{total_to_process} pages processed...", end="", flush=True)
+
+                print("\n   [RapidOCR] OCR extraction complete!")
+                # Reconstruct text in page order
+                ordered_text = [results_map[idx] for idx in page_indices if idx in results_map]
+                return "\n".join(ordered_text)
+            except Exception as ocr_err:
+                print(f"\n   [WARN] OCR extraction failed: {ocr_err}")
+                return ""
+
         if force_pymupdf:
             text = extract_with_pymupdf()
         else:
@@ -123,11 +186,14 @@ def extract_text_from_file(
                 print("   [WARN] pdfplumber returned no text. Falling back to PyMuPDF...")
                 text = extract_with_pymupdf()
 
+        if not text.strip():
+            print("   [INFO] Scanned image PDF detected. Triggering RapidOCR engine...")
+            text = extract_with_ocr()
+
         if text.strip():
             return text
 
-        print("ERROR: Both pdfplumber and PyMuPDF extracted empty text.")
-        print("       The PDF may be image-based (scanned). Please use a text-based PDF.")
+        print("ERROR: Could not extract text from PDF via pdfplumber, PyMuPDF, or RapidOCR.")
         sys.exit(1)
 
     elif ext == ".txt":

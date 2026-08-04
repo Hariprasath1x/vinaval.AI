@@ -35,3 +35,19 @@ class UserRepository:
             await self.db.commit()
             await self.db.refresh(user)
         return user
+
+    async def update_name(self, user_id: int, name: str) -> Optional[User]:
+        user = await self.get_by_id(user_id)
+        if user:
+            user.name = name
+            await self.db.commit()
+            await self.db.refresh(user)
+        return user
+
+    async def update_password(self, user_id: int, hashed_password: str) -> Optional[User]:
+        user = await self.get_by_id(user_id)
+        if user:
+            user.hashed_password = hashed_password
+            await self.db.commit()
+            await self.db.refresh(user)
+        return user

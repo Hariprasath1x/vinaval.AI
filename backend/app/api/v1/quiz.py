@@ -9,18 +9,20 @@ from app.services.space_service import SpaceService
 from app.services.quiz_service import QuizService
 from app.schemas.quiz import (
     GenerateQuestionsRequest,
+    GenerateQuestionsResponse,
     QuestionOut,
     SubmitAnswerRequest,
     AnswerResult,
     SpaceStats,
     QuizReviewRequest,
     QuizReviewResponse,
+    QuizSessionOut,
 )
 
 router = APIRouter(prefix="/spaces", tags=["Quiz"])
 
 
-@router.post("/{space_id}/quiz/generate", response_model=List[QuestionOut], status_code=status.HTTP_201_CREATED)
+@router.post("/{space_id}/quiz/generate", response_model=GenerateQuestionsResponse, status_code=status.HTTP_201_CREATED)
 async def generate_questions(
     space_id: int,
     body: GenerateQuestionsRequest,
@@ -87,3 +89,16 @@ async def get_quiz_review(
     space = await space_svc.get_space(space_id, current_user.id)
     quiz_svc = QuizService(db)
     return await quiz_svc.generate_review(space, body)
+
+
+@router.get("/{space_id}/quiz/history", response_model=List[QuizSessionOut])
+async def get_quiz_history(
+    space_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get the history of quiz sessions for this space."""
+    space_svc = SpaceService(db)
+    await space_svc.get_space(space_id, current_user.id)
+    quiz_svc = QuizService(db)
+    return await quiz_svc.get_history(space_id)

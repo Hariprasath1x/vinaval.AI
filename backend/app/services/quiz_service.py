@@ -23,7 +23,7 @@ class QuizService:
 
     async def generate_questions(
         self, space: LearningSpace, req: GenerateQuestionsRequest
-    ) -> List[QuizQuestion]:
+    ) -> dict:
         count = max(1, min(30, req.count))  # clamp 1–30 (exam mode can request up to 30)
 
         try:
@@ -68,7 +68,21 @@ class QuizService:
                 detail="AI returned no valid questions. Try a different topic.",
             )
 
-        return await self.repo.bulk_save_questions(questions)
+        saved_questions = await self.repo.bulk_save_questions(questions)
+
+        lang = getattr(req, "lang", "en")
+        session = await self.repo.create_session(
+            space_id=space.id,
+            topic=req.topic,
+            total_questions=len(saved_questions),
+            is_exam=(req.topic is None),
+            lang=lang
+        )
+
+        return {
+            "session_id": session.id,
+            "questions": saved_questions
+        }
 
     async def get_questions(
         self, space_id: int, topic: Optional[str] = None
@@ -100,7 +114,16 @@ class QuizService:
             is_correct=is_correct,
             time_taken_seconds=req.time_taken_seconds,
             is_exam=req.is_exam,
+            session_id=req.session_id,
         )
+
+        if req.session_id:
+            session = await self.repo.get_session(req.session_id)
+            if session:
+                if is_correct:
+                    session.correct_answers += 1
+                session.score_pct = int(round((session.correct_answers / session.total_questions) * 100)) if session.total_questions > 0 else 0
+                await self.repo.update_session(session)
 
         return AnswerResult(
             question_id=question.id,
@@ -133,6 +156,9 @@ class QuizService:
             accuracy_all=pct(all_correct, all_total),
             topics_practiced=data["topics"],
         )
+
+    async def get_history(self, space_id: int) -> list:
+        return await self.repo.get_sessions_for_space(space_id)
 
     async def generate_review(
         self, space: LearningSpace, req: QuizReviewRequest

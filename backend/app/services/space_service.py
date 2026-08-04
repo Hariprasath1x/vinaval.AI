@@ -51,6 +51,16 @@ class SpaceService:
     async def list_spaces(self, user_id: int) -> List[LearningSpace]:
         return await self.repo.list_spaces(user_id)
 
+    async def delete_space(self, space_id: int, user_id: int) -> bool:
+        """Delete a Learning Space. Raises 404 if not found or not owned by user."""
+        deleted = await self.repo.delete_space(space_id, user_id)
+        if not deleted:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Learning Space not found.",
+            )
+        return True
+
     # ── Chat ───────────────────────────────────────────────────────────────────
 
     async def get_messages(self, space_id: int) -> List[ChatMessage]:
@@ -62,7 +72,7 @@ class SpaceService:
     async def save_assistant_message(self, space_id: int, content: str) -> ChatMessage:
         return await self.repo.add_message(space_id, "assistant", content)
 
-    async def stream_ai_response(self, space: LearningSpace, user_message: str):
+    async def stream_ai_response(self, space: LearningSpace, user_message: str, forced_lang: Optional[str] = None):
         """
         Generator: yields SSE-formatted chunks, then saves both messages to DB.
         """
@@ -75,7 +85,7 @@ class SpaceService:
 
         # Stream AI response
         full_response: list[str] = []
-        async for chunk in stream_chat(space.exam_id, space.subject, history, user_message):
+        async for chunk in stream_chat(space.exam_id, space.subject, history, user_message, forced_lang):
             full_response.append(chunk)
             yield chunk
 

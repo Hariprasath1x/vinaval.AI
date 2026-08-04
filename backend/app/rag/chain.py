@@ -71,14 +71,7 @@ You are NOT a chatbot that gives one-liner answers. You are a passionate teacher
 - Politely redirect off-topic questions back to studies.
 
 ### Language (IMPORTANT):
-- Detect the language the student is writing in.
-- If the student writes in **Tamil**, reply entirely in **Tamil**.
-  • Use clear, modern Tamil.
-  • For technical terms, write the Tamil word first, then the English term in parentheses — e.g. "ஒளிச்சேர்க்கை (Photosynthesis)".
-  • Use markdown formatting even in Tamil replies.
-  • Equations and chemical formulas remain in their universal notation.
-- If the student writes in **English**, reply in **English**.
-- If the student mixes languages (Tanglish), match their style naturally.
+{lang_block}
 
 {context_block}
 You are a deeply knowledgeable, warm, and motivating teacher. \
@@ -161,12 +154,37 @@ def _retrieve_context(exam: str, subject: str, query: str, n_results: int = 4) -
         return "", 0
 
 
-def _build_system_prompt(exam: str, subject: str, context_block: str = "") -> str:
+def _build_system_prompt(exam: str, subject: str, context_block: str = "", forced_lang: Optional[str] = None) -> str:
     tag = EXAM_TAGS.get(exam, exam)
+
+    lang_block = ""
+    if forced_lang == "ta":
+        lang_block = (
+            "- You MUST reply entirely in **Tamil**, regardless of what language the student writes in.\n"
+            "  • Use clear, modern Tamil.\n"
+            "  • For technical terms, write the Tamil word first, then the English term in parentheses — e.g. \"ஒளிச்சேர்க்கை (Photosynthesis)\".\n"
+            "  • Use markdown formatting even in Tamil replies.\n"
+            "  • Equations and chemical formulas remain in their universal notation."
+        )
+    elif forced_lang == "en":
+        lang_block = "- You MUST reply entirely in **English**, regardless of what language the student writes in."
+    else:
+        lang_block = (
+            "- Detect the language the student is writing in.\n"
+            "- If the student writes in **Tamil**, reply entirely in **Tamil**.\n"
+            "  • Use clear, modern Tamil.\n"
+            "  • For technical terms, write the Tamil word first, then the English term in parentheses — e.g. \"ஒளிச்சேர்க்கை (Photosynthesis)\".\n"
+            "  • Use markdown formatting even in Tamil replies.\n"
+            "  • Equations and chemical formulas remain in their universal notation.\n"
+            "- If the student writes in **English**, reply in **English**.\n"
+            "- If the student mixes languages (Tanglish), match their style naturally."
+        )
+
     return SYSTEM_PROMPT.format(
         exam=exam,
         exam_tag=tag,
         subject=subject,
+        lang_block=lang_block,
         context_block=context_block,
     )
 
@@ -178,6 +196,7 @@ async def stream_chat(
     subject: str,
     history: List[Dict[str, str]],   # [{"role": "user"/"assistant", "content": "…"}]
     user_message: str,
+    forced_lang: Optional[str] = None,
 ) -> AsyncGenerator[str, None]:
     """
     Stream an AI response token-by-token using Groq's async client.
@@ -197,7 +216,7 @@ async def stream_chat(
     logger.debug("Detected student language: %s", lang)
 
     client = AsyncGroq(api_key=settings.GROQ_API_KEY)
-    messages = [{"role": "system", "content": _build_system_prompt(exam, subject, context_block)}]
+    messages = [{"role": "system", "content": _build_system_prompt(exam, subject, context_block, forced_lang)}]
     messages.extend(history)
     messages.append({"role": "user", "content": user_message})
 
@@ -220,10 +239,11 @@ async def get_chat_response(
     subject: str,
     history: List[Dict[str, str]],
     user_message: str,
+    forced_lang: Optional[str] = None,
 ) -> str:
     """Non-streaming version — returns full response. Used as fallback or for testing."""
     parts = []
-    async for chunk in stream_chat(exam, subject, history, user_message):
+    async for chunk in stream_chat(exam, subject, history, user_message, forced_lang):
         parts.append(chunk)
     return "".join(parts)
 

@@ -56,6 +56,15 @@ class SpaceRepository:
         # rows that may exist in the database without crashing.
         return result.scalars().first()
 
+    async def delete_space(self, space_id: int, user_id: int) -> bool:
+        """Delete a learning space (only if it belongs to the given user). Returns True if deleted."""
+        space = await self.get_space_by_id(space_id, user_id)
+        if not space:
+            return False
+        await self.db.delete(space)
+        await self.db.commit()
+        return True
+
 
     # ── Chat Messages ──────────────────────────────────────────────────────────
 

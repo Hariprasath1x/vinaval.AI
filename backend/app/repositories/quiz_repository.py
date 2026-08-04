@@ -34,6 +34,38 @@ class QuizRepository:
         )
         return result.scalar_one_or_none()
 
+    # ── Sessions ───────────────────────────────────────────────────────────────
+
+    async def create_session(self, space_id: int, topic: Optional[str], total_questions: int, is_exam: bool, lang: str) -> "QuizSession":
+        from app.models.quiz import QuizSession
+        session = QuizSession(
+            space_id=space_id,
+            topic=topic,
+            total_questions=total_questions,
+            is_exam=is_exam,
+            lang=lang,
+        )
+        self.db.add(session)
+        await self.db.commit()
+        await self.db.refresh(session)
+        return session
+
+    async def get_session(self, session_id: int) -> Optional["QuizSession"]:
+        from app.models.quiz import QuizSession
+        result = await self.db.execute(select(QuizSession).where(QuizSession.id == session_id))
+        return result.scalar_one_or_none()
+
+    async def update_session(self, session: "QuizSession") -> "QuizSession":
+        await self.db.commit()
+        await self.db.refresh(session)
+        return session
+
+    async def get_sessions_for_space(self, space_id: int, limit: int = 20) -> List["QuizSession"]:
+        from app.models.quiz import QuizSession
+        stmt = select(QuizSession).where(QuizSession.space_id == space_id).order_by(QuizSession.created_at.desc()).limit(limit)
+        result = await self.db.execute(stmt)
+        return list(result.scalars().all())
+
     # ── Attempts ───────────────────────────────────────────────────────────────
 
     async def save_attempt(
@@ -44,9 +76,11 @@ class QuizRepository:
         is_correct: bool,
         time_taken_seconds: Optional[int],
         is_exam: bool,
+        session_id: Optional[int] = None,
     ) -> QuizAttempt:
         attempt = QuizAttempt(
             space_id=space_id,
+            session_id=session_id,
             question_id=question_id,
             user_answer=user_answer,
             is_correct=is_correct,

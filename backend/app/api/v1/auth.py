@@ -101,6 +101,44 @@ async def get_me(current_user: User = Depends(get_current_user)):
     return current_user
 
 
+@router.put("/profile", response_model=UserResponse)
+async def update_profile(
+    body: ProfileUpdateRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Update user's profile (e.g. name)."""
+    try:
+        service = AuthService(db)
+        return await service.update_profile(current_user.id, body.name)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update profile: {exc}",
+        )
+
+
+@router.put("/change-password", status_code=status.HTTP_200_OK)
+async def change_password(
+    body: ChangePasswordRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Change the user's password."""
+    try:
+        service = AuthService(db)
+        await service.change_password(current_user.id, body.current_password, body.new_password)
+        return {"message": "Password updated successfully."}
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to change password: {exc}",
+        )
+
 # ── Forgot Password ───────────────────────────────────────────────────────────
 
 class ForgotPasswordRequest(BaseModel):

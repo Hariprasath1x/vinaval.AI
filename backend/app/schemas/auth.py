@@ -16,6 +16,7 @@ class UserCreate(UserBase):
 
 class UserResponse(UserBase):
     id: int
+    google_id: Optional[str] = None
     selected_exam: Optional[str] = None
     created_at: datetime
 
@@ -46,3 +47,14 @@ class LoginRequest(BaseModel):
 
 class GoogleCallbackRequest(BaseModel):
     code: str
+
+
+# ── Profile Updates ───────────────────────────────────────────────────────────
+
+class ProfileUpdateRequest(BaseModel):
+    name: str
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str

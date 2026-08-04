@@ -26,11 +26,31 @@ class GenerateQuestionsRequest(BaseModel):
     lang: str = "en"  # "en" (English) or "ta" (Tamil)
 
 
+class GenerateQuestionsResponse(BaseModel):
+    session_id: Optional[int] = None
+    questions: List[QuestionOut]
+
+
 class SubmitAnswerRequest(BaseModel):
     question_id: int
     user_answer: str            # "a", "b", "c", or "d"
     time_taken_seconds: Optional[int] = None
     is_exam: bool = False
+    session_id: Optional[int] = None
+
+class QuizSessionOut(BaseModel):
+    id: int
+    space_id: int
+    topic: Optional[str]
+    total_questions: int
+    correct_answers: int
+    score_pct: int
+    is_exam: bool
+    lang: str
+    is_completed: bool
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
 
 
 class AnswerResult(BaseModel):

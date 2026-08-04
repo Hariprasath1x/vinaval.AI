@@ -24,10 +24,14 @@ from utils.api import (
     generate_flashcards,
     list_flashcards,
     list_flashcard_topics,
+    delete_flashcard_topic,
     generate_quiz,
     submit_answer,
     get_quiz_stats,
+    get_quiz_history,
     generate_quiz_review,
+    get_note,
+    save_note,
 )
 
 st.set_page_config(page_title="Learning Space", page_icon="📖", layout="wide")
@@ -152,12 +156,13 @@ st.divider()
 #  TABS
 # ═════════════════════════════════════════════════════════════════════════════
 
-tab_learn, tab_materials, tab_flashcards, tab_quiz, tab_reports = st.tabs([
+tab_learn, tab_materials, tab_flashcards, tab_quiz, tab_reports, tab_notes = st.tabs([
     "🧠 Learn (AI Chat)",
     "📚 Materials",
     "🃏 Flashcards",
     "📝 Exam Lab",
     "📈 Reports",
+    "📓 My Notes",
 ])
 
 
@@ -185,8 +190,16 @@ with tab_learn:
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
 
-    # Clear chat
-    with st.expander("⚙️ Options"):
+    # Clear chat / Options
+    with st.expander("⚙️ Options", expanded=False):
+        st.session_state["chat_lang"] = st.radio(
+            "AI Reply Language",
+            options=["auto", "en", "ta"],
+            format_func=lambda x: {"auto": "🤖 Auto-Detect (Match my language)", "en": "🇬🇧 English", "ta": "🇮🇳 Tamil"}[x],
+            index=["auto", "en", "ta"].index(st.session_state.get("chat_lang", "auto")),
+            help="Force the AI to reply in a specific language, or let it auto-detect based on what you type."
+        )
+        st.divider()
         if st.button("🗑️ Clear chat display (history saved on server)"):
             st.session_state.chat_messages = []
             st.rerun()
@@ -203,7 +216,8 @@ with tab_learn:
             response_placeholder = st.empty()
             full_response = ""
             with st.spinner(""):
-                for chunk in stream_chat(space_id, prompt):
+                chat_lang = st.session_state.get("chat_lang", "auto")
+                for chunk in stream_chat(space_id, prompt, chat_lang):
                     full_response += chunk
                     response_placeholder.markdown(full_response + "▌")
             response_placeholder.markdown(full_response)
@@ -389,18 +403,25 @@ with tab_flashcards:
         st.info("No saved flashcard sets yet. Generate one above!")
     else:
         for t in topics:
-            if st.button(f"📂 Load: {t}", key=f"load_fc_{t}"):
-                with st.spinner(f"Loading flashcards for '{t}'..."):
-                    saved_cards = list_flashcards(space_id, t)
-                if saved_cards:
-                    loaded = [{"front": c["front"], "back": c["back"]} for c in saved_cards]
-                    st.session_state["fc_queue"] = list(loaded)
-                    st.session_state["fc_mastered"] = 0
-                    st.session_state["fc_total"] = len(loaded)
-                    st.session_state["fc_active_topic"] = t
-                    st.session_state["fc_show_back"] = False
-                    st.session_state.pop("fc_active_cards", None)
-                    st.rerun()
+            col_load, col_del = st.columns([5, 1])
+            with col_load:
+                if st.button(f"📂 Load: {t}", key=f"load_fc_{t}", use_container_width=True):
+                    with st.spinner(f"Loading flashcards for '{t}'..."):
+                        saved_cards = list_flashcards(space_id, t)
+                    if saved_cards:
+                        loaded = [{"front": c["front"], "back": c["back"]} for c in saved_cards]
+                        st.session_state["fc_queue"] = list(loaded)
+                        st.session_state["fc_mastered"] = 0
+                        st.session_state["fc_total"] = len(loaded)
+                        st.session_state["fc_active_topic"] = t
+                        st.session_state["fc_show_back"] = False
+                        st.session_state.pop("fc_active_cards", None)
+                        st.rerun()
+            with col_del:
+                if st.button("🗑️", key=f"del_fc_{t}", help=f"Delete all flashcards for '{t}'"):
+                    if delete_flashcard_topic(space_id, t):
+                        st.success(f"Deleted flashcards for '{t}'.")
+                        st.rerun()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -464,9 +485,10 @@ with tab_quiz:
             st.warning("Please select or enter a topic for practice mode.")
         else:
             with st.spinner(f"Generating {q_count} questions..."):
-                questions = generate_quiz(space_id, target_topic, q_count, lang=q_lang)
-            if questions:
-                st.session_state.quiz_questions = questions
+                quiz_data = generate_quiz(space_id, target_topic, q_count, lang=q_lang)
+            if quiz_data and "questions" in quiz_data:
+                st.session_state.quiz_questions = quiz_data["questions"]
+                st.session_state.quiz_session_id = quiz_data.get("session_id")
                 st.session_state.quiz_answers = {}
                 st.session_state.quiz_submitted = False
                 st.session_state.quiz_is_exam = is_mock_exam
@@ -544,7 +566,13 @@ with tab_quiz:
                             for q in st.session_state.quiz_questions:
                                 ans = st.session_state.get(f"quiz_q_{q['id']}")
                                 st.session_state.quiz_answers[q["id"]] = ans
-                                result = submit_answer(space_id, q["id"], ans, is_exam=is_exam_mode)
+                                result = submit_answer(
+                                    space_id, 
+                                    q["id"], 
+                                    ans, 
+                                    is_exam=is_exam_mode,
+                                    session_id=st.session_state.get("quiz_session_id")
+                                )
                                 if result:
                                     st.session_state[f"exam_result_{q['id']}"] = result
                                     review_results.append({"topic": q["topic"], "is_correct": result["is_correct"]})
@@ -685,3 +713,106 @@ with tab_reports:
             st.info("📈 Good progress! Review your weak topics.")
         else:
             st.warning("📖 Keep practicing — focus on your weak areas.")
+
+
+        # ── Quiz History
+        st.divider()
+        st.markdown("### 📋 Past Quiz Sessions")
+        history = get_quiz_history(space_id)
+        if not history:
+            st.info("You haven't taken any quizzes in this space yet.")
+        else:
+            for session in history:
+                with st.container(border=True):
+                    cols = st.columns([2, 1, 1, 1])
+                    mode_icon = "🎓 Mock Exam" if session["is_exam"] else "🏋️ Practice"
+                    topic_display = session["topic"] if session["topic"] else "Full Syllabus"
+                    
+                    with cols[0]:
+                        st.markdown(f"**{topic_display}**")
+                        st.caption(f"{session['created_at'][:10]} • {mode_icon}")
+                    with cols[1]:
+                        st.metric("Score", f"{session['correct_answers']} / {session['total_questions']}")
+                    with cols[2]:
+                        st.metric("Accuracy", f"{session['score_pct']}%")
+                    with cols[3]:
+                        lang_badge = "🇮🇳 TA" if session["lang"] == "ta" else "🇬🇧 EN"
+                        st.markdown(f"<div style='margin-top: 15px;'>{lang_badge}</div>", unsafe_allow_html=True)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  TAB 6 — MY NOTES  (Personal revision notes per space)
+# ─────────────────────────────────────────────────────────────────────────────
+
+with tab_notes:
+    st.subheader("📓 My Revision Notes")
+    st.caption(
+        "Write your own study notes for this subject. "
+        "Notes are saved per Learning Space and support **Markdown formatting**."
+    )
+
+    # Load notes from backend only once per session (cache in session_state)
+    note_key = f"note_content_{space_id}"
+    note_loaded_key = f"note_loaded_{space_id}"
+
+    if not st.session_state.get(note_loaded_key):
+        with st.spinner("Loading your notes..."):
+            loaded_content = get_note(space_id)
+        st.session_state[note_key] = loaded_content
+        st.session_state[note_loaded_key] = True
+
+    # ── Two-column layout: Editor | Preview
+    col_editor, col_preview = st.columns(2, gap="medium")
+
+    with col_editor:
+        st.markdown("**✏️ Editor**")
+        note_text = st.text_area(
+            label="Note editor",
+            value=st.session_state.get(note_key, ""),
+            height=420,
+            placeholder=(
+                "Start writing your revision notes here...\n\n"
+                "Supports Markdown:\n"
+                "# Heading\n"
+                "**bold**, *italic*\n"
+                "- bullet lists\n"
+                "| Table | Col |\n"
+            ),
+            label_visibility="collapsed",
+            key=f"note_textarea_{space_id}",
+        )
+        # Update session state on every keystroke
+        st.session_state[note_key] = note_text
+
+        char_count = len(note_text)
+        col_save, col_clear = st.columns([3, 1])
+        with col_save:
+            if st.button("💾 Save Notes", type="primary", use_container_width=True):
+                with st.spinner("Saving..."):
+                    ok = save_note(space_id, note_text)
+                if ok:
+                    st.success("✅ Notes saved!")
+                else:
+                    st.error("❌ Failed to save. Try again.")
+        with col_clear:
+            if st.button("🗑️ Clear", use_container_width=True, help="Clear editor (does not delete saved notes)"):
+                st.session_state[note_key] = ""
+                st.rerun()
+
+        st.caption(f"📝 {char_count:,} characters")
+
+    with col_preview:
+        st.markdown("**👁️ Live Preview**")
+        preview_box = st.container(border=True)
+        with preview_box:
+            if note_text.strip():
+                st.markdown(note_text)
+            else:
+                st.caption("*Start typing in the editor to see a live preview here...*")
+
+    st.divider()
+    st.info(
+        "💡 **Tip:** Use Markdown to structure your notes — "
+        "`# Headings`, `**bold**`, `- bullet lists`, and `| tables |` all render beautifully in the preview!"
+    )
+

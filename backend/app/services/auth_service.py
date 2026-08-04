@@ -127,3 +127,25 @@ class AuthService:
             access_token=access_token,
             user=UserResponse.model_validate(user),
         )
+
+    # ── Profile Updates ───────────────────────────────────────────────────────
+
+    async def update_profile(self, user_id: int, name: str) -> UserResponse:
+        user = await self.repo.update_name(user_id, name)
+        if not user:
+            raise ValueError("User not found")
+        return UserResponse.model_validate(user)
+
+    async def change_password(self, user_id: int, current_pw: str, new_pw: str) -> bool:
+        user = await self.repo.get_by_id(user_id)
+        if not user:
+            raise ValueError("User not found")
+        if not user.hashed_password:
+            raise ValueError("This account uses Google Sign-In and does not have a password.")
+        
+        if not _verify_password(current_pw, user.hashed_password):
+            raise ValueError("Incorrect current password.")
+
+        hashed = _hash_password(new_pw)
+        await self.repo.update_password(user_id, hashed)
+        return True
