@@ -1,7 +1,7 @@
-from typing import List, Optional, Tuple
-from sqlalchemy import select, func as sql_func
+from typing import List, Optional
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.models.quiz import QuizQuestion, QuizAttempt
+from app.models.quiz import QuizQuestion, QuizAttempt, QuizSession
 
 
 class QuizRepository:

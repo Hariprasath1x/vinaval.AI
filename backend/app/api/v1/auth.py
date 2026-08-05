@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel
 import requests
 
 from app.core.database import get_db
@@ -11,6 +11,8 @@ from app.schemas.auth import (
     UserResponse,
     SignupRequest,
     LoginRequest,
+    ProfileUpdateRequest,
+    ChangePasswordRequest,
 )
 from app.models.user import User
 

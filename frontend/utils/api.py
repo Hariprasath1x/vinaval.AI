@@ -7,7 +7,7 @@ import requests
 import streamlit as st
 from typing import Dict, Any, List, Optional, Generator
 
-BASE_URL = os.getenv("API_URL", "http://localhost:8000/api/v1")
+BASE_URL = os.getenv("API_URL", "http://127.0.0.1:8000/api/v1")
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -45,7 +45,7 @@ def signup(name: str, email: str, password: str) -> Optional[Dict[str, Any]]:
         resp = requests.post(
             f"{BASE_URL}/auth/signup",
             json={"name": name, "email": email, "password": password},
-            timeout=10,
+            timeout=30,
         )
         data = _handle(resp)
         if data:
@@ -54,6 +54,8 @@ def signup(name: str, email: str, password: str) -> Optional[Dict[str, Any]]:
             return data["user"]
     except requests.exceptions.ConnectionError:
         st.error("❌ Cannot reach the backend. Is it running on port 8000?")
+    except requests.exceptions.ReadTimeout:
+        st.error("❌ The backend took too long to respond. Please try again.")
     return None
 
 
@@ -63,7 +65,7 @@ def login(email: str, password: str) -> Optional[Dict[str, Any]]:
         resp = requests.post(
             f"{BASE_URL}/auth/login",
             json={"email": email, "password": password},
-            timeout=10,
+            timeout=30,
         )
         data = _handle(resp)
         if data:
@@ -72,6 +74,8 @@ def login(email: str, password: str) -> Optional[Dict[str, Any]]:
             return data["user"]
     except requests.exceptions.ConnectionError:
         st.error("❌ Cannot reach the backend. Is it running on port 8000?")
+    except requests.exceptions.ReadTimeout:
+        st.error("❌ The backend took too long to respond. Please try again.")
     return None
 
 
@@ -279,16 +283,27 @@ def delete_document(space_id: int, doc_id: int) -> bool:
 
 # ── Chat (RAG) ────────────────────────────────────────────────────────────────
 
-def stream_chat(space_id: int, message: str, lang: str = "auto") -> Generator[str, None, None]:
+def stream_chat(
+    space_id: int,
+    message: str,
+    lang: str = "auto",
+    active_doc_id: Optional[int] = None,
+    active_doc_filename: Optional[str] = None,
+) -> Generator[str, None, None]:
     """
     Stream the AI response from the RAG chain.
-    The backend searches ChromaDB (books + user uploads) then calls Groq LLM.
+    Passes active_doc_id so the backend restricts retrieval to that file.
     Yields text chunks as they arrive (Server-Sent Events format).
     """
+    payload: Dict[str, Any] = {"content": message, "lang": lang}
+    if active_doc_id is not None:
+        payload["active_doc_id"] = active_doc_id
+    if active_doc_filename is not None:
+        payload["active_doc_filename"] = active_doc_filename
     try:
         with requests.post(
             f"{BASE_URL}/spaces/{space_id}/chat",
-            json={"content": message, "lang": lang},
+            json=payload,
             headers=_headers(),
             stream=True,
             timeout=60,
@@ -298,23 +313,22 @@ def stream_chat(space_id: int, message: str, lang: str = "auto") -> Generator[st
                 if line:
                     decoded = line.decode("utf-8")
                     if decoded.startswith("data: "):
-                        payload = decoded[6:]
-                        if payload == "[DONE]":
+                        payload_data = decoded[6:]
+                        if payload_data == "[DONE]":
                             break
-                        # Payload is a JSON-encoded string chunk
-                        import json
+                        import json as _json
                         try:
-                            chunk = json.loads(payload)
+                            chunk = _json.loads(payload_data)
                             if isinstance(chunk, str):
                                 yield chunk
                             elif isinstance(chunk, dict) and "error" in chunk:
-                                yield f"\n\n❌ Error: {chunk['error']}"
-                        except json.JSONDecodeError:
-                            yield payload
+                                yield f"\n\n\u274c Error: {chunk['error']}"
+                        except _json.JSONDecodeError:
+                            yield payload_data
     except requests.exceptions.ConnectionError:
-        yield "❌ Backend unreachable."
+        yield "\u274c Backend unreachable."
     except requests.exceptions.Timeout:
-        yield "❌ Request timed out. The AI might be taking too long."
+        yield "\u274c Request timed out. The AI might be taking too long."
 
 
 # ── Flashcards ────────────────────────────────────────────────────────────────

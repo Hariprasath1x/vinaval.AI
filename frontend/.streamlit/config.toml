@@ -2,7 +2,8 @@
 gatherUsageStats = false
 
 [server]
-port = 8501
+# NOTE: port and address are controlled exclusively by launch.py
+# Do NOT add port/address here — launch.py is the single source of truth.
 headless = true
 
 [theme]

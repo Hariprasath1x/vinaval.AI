@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import Integer, String, DateTime, ForeignKey
+from sqlalchemy import Integer, String, DateTime, ForeignKey, Text
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
 
@@ -18,6 +18,10 @@ class SpaceDocument(Base):
     # "user_upload" = question bank / notes uploaded by student
     # "book" = static syllabus seeded by admin (not user-deletable from UI)
     source: Mapped[str] = mapped_column(String, nullable=False, default="user_upload")
+    # JSON-serialised list of extracted headings/topics e.g. '["Surface Chemistry","Adsorption"]'
+    topics: Mapped[str] = mapped_column(Text, nullable=True, default=None)
+    # Number of semantic chunks indexed into ChromaDB
+    chunk_count: Mapped[int] = mapped_column(Integer, nullable=True, default=None)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

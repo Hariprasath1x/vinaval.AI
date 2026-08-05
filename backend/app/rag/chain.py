@@ -16,11 +16,29 @@ Multilingual Pipeline
                  technical terms in parentheses where helpful.
 
 3. MCQ/Cards  : Generation prompts pass the detected language so questions and
-               explanations are produced in the student's preferred language.
+                explanations are produced in the student's preferred language.
+
+Hybrid RAG (v2)
+---------------
+Intent classification (keyword-heuristic, zero-latency) routes each query to
+the optimal retrieval strategy:
+
+  QUESTION / DEFINE_TERM / FIND_TOPIC
+      → Semantic vector search (Chroma) with optional doc_id filter
+  LIST_TOPICS
+      → Return stored topics metadata (no vector search)
+  EXPLAIN_DOCUMENT / SUMMARIZE_DOCUMENT / GENERATE_NOTES /
+  GENERATE_QUIZ / GENERATE_FLASHCARDS
+      → Load ALL chunks for the active document
+
+When active_doc_id is set, retrieval is restricted to that file only.
+When no file is selected, only the pre-seeded syllabus books are searched.
 """
 from __future__ import annotations
 import json
 import logging
+import re as _re
+import time
 from typing import AsyncGenerator, List, Dict, Tuple, Optional
 
 from groq import AsyncGroq
@@ -29,9 +47,9 @@ from app.core.config import get_settings
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
-# ── Language Detection (heuristic) ────────────────────────────────────────────
-import re as _re
+# ── Language Detection (heuristic) ───────────────────────────────────────────
 _TAMIL_RE = _re.compile(r"[\u0B80-\u0BFF]")
+
 
 def _detect_lang(text: str) -> str:
     """Return 'ta' if the text contains significant Tamil Unicode, else 'en'."""
@@ -41,7 +59,51 @@ def _detect_lang(text: str) -> str:
     return "ta" if ratio > 0.03 else "en"
 
 
-# ── System Prompt ──────────────────────────────────────────────────────────────
+# ── Intent Classification (keyword heuristic — zero latency) ─────────────────
+#
+# Intent → Retrieval strategy:
+#   LIST_TOPICS          → topics metadata only
+#   EXPLAIN_DOCUMENT     → all chunks for active doc
+#   SUMMARIZE_DOCUMENT   → all chunks for active doc
+#   GENERATE_NOTES       → all chunks for active doc
+#   GENERATE_QUIZ        → all chunks for active doc
+#   GENERATE_FLASHCARDS  → all chunks for active doc
+#   QUESTION / GENERAL   → semantic vector search
+
+_DOC_FULL_PATTERNS = [
+    # EXPLAIN_DOCUMENT
+    (_re.compile(r"\b(explain all|explain every|go through|teach me all|cover all|walk me through all)\b", _re.I), "EXPLAIN_DOCUMENT"),
+    # SUMMARIZE_DOCUMENT
+    (_re.compile(r"\b(summarize|summarise|summary|overview|briefly explain|give me an overview)\b", _re.I), "SUMMARIZE_DOCUMENT"),
+    # GENERATE_NOTES
+    (_re.compile(r"\b(make notes|create notes|generate notes|write notes|prepare notes|revision notes|study notes)\b", _re.I), "GENERATE_NOTES"),
+    # GENERATE_QUIZ
+    (_re.compile(r"\b(generate quiz|create quiz|make quiz|quiz me|mcq|multiple choice|one-mark|two-mark|question paper)\b", _re.I), "GENERATE_QUIZ"),
+    # GENERATE_FLASHCARDS
+    (_re.compile(r"\b(flashcard|flash card|make cards|create cards)\b", _re.I), "GENERATE_FLASHCARDS"),
+]
+
+_LIST_PATTERNS = _re.compile(
+    r"\b(list (all )?(topics|chapters|sections|contents)|what (topics|chapters|sections) are|show (me )?(the )?(topics|chapters|list)|table of contents|contents of|all topics|all chapters)\b",
+    _re.I,
+)
+
+
+def classify_intent(message: str) -> str:
+    """
+    Classify user intent using keyword patterns.
+    Returns one of: LIST_TOPICS | EXPLAIN_DOCUMENT | SUMMARIZE_DOCUMENT |
+                    GENERATE_NOTES | GENERATE_QUIZ | GENERATE_FLASHCARDS | QUESTION
+    """
+    if _LIST_PATTERNS.search(message):
+        return "LIST_TOPICS"
+    for pattern, intent in _DOC_FULL_PATTERNS:
+        if pattern.search(message):
+            return intent
+    return "QUESTION"
+
+
+# ── System Prompts ────────────────────────────────────────────────────────────
 
 SYSTEM_PROMPT = """\
 You are Vinaval AI — an expert, encouraging AI tutor for Tamil Nadu students preparing for \
@@ -76,7 +138,30 @@ You are NOT a chatbot that gives one-liner answers. You are a passionate teacher
 {context_block}
 You are a deeply knowledgeable, warm, and motivating teacher. \
 Your mission is to help every student — Tamil medium or English medium — \
-fully master {subject} and crack {exam} with confidence!"""
+fully master {subject} and crack {exam} with confidence!\
+"""
+
+# System prompt used when active file context is set — stricter grounding
+DOCUMENT_SYSTEM_PROMPT = """\
+You are Vinaval AI — an AI tutor helping a student understand their uploaded study notes.
+
+Active document: **{filename}**
+Subject: {exam} → {subject}
+
+### CRITICAL RULES:
+1. Answer STRICTLY based on the content provided in the "### Document Content" section below.
+2. If a topic is covered in the content, explain it clearly and thoroughly.
+3. If a topic is NOT present in the content, say explicitly:
+   "The uploaded document does not contain details about [topic]. Here is what I know from the syllabus: ..."
+   — then provide a brief general answer. Never hallucinate silently.
+4. Always attribute your answer to the uploaded document when using it.
+
+### Language:
+{lang_block}
+
+{context_block}
+Be warm, structured, and thorough.\
+"""
 
 EXAM_TAGS = {
     "NEET":  "Medical Entrance Exam",
@@ -84,43 +169,35 @@ EXAM_TAGS = {
 }
 
 
-# ── RAG Retrieval ──────────────────────────────────────────────────────────────
+# ── RAG Retrieval — Syllabus Books (no doc filter) ───────────────────────────
 
-def _retrieve_context(exam: str, subject: str, query: str, n_results: int = 4) -> Tuple[str, int]:
+def _retrieve_syllabus_context(exam: str, subject: str, query: str, n_results: int = 4) -> Tuple[str, int]:
     """
-    Semantic search across ALL language collections for this exam+subject.
-
-    Strategy:
-      • Query both 'neet_physics_en' and 'neet_physics_ta' (and legacy 'neet_physics').
-      • Merge results, deduplicate, keep the top-n by relevance (Chroma returns
-        results ordered by distance — we simply interleave and take the first n).
-
-    Returns:
-        (context_block_str, total_chunks_found)
+    Semantic search across pre-seeded syllabus book collections only.
+    Used when no active file is selected.
     """
     try:
         from app.core.chroma import get_collections_for_subject
         collections = get_collections_for_subject(exam, subject)
-
         if not collections:
             return "", 0
 
-        all_docs:  List[str]  = []
+        all_docs: List[str] = []
         all_metas: List[dict] = []
-
-        per_col = max(2, n_results)  # query each collection independently
         seen: set = set()
 
         for col in collections:
             try:
-                k = min(per_col, col.count())
+                k = min(max(2, n_results), col.count())
                 if k == 0:
                     continue
                 results = col.query(query_texts=[query], n_results=k)
-                docs:  List[str]  = results.get("documents", [[]])[0]
-                metas: List[dict] = results.get("metadatas",  [[]])[0]
+                docs = results.get("documents", [[]])[0]
+                metas = results.get("metadatas", [[]])[0]
                 for doc, meta in zip(docs, metas):
-                    # Deduplicate identical text
+                    # Skip user-uploaded chunks when in syllabus-only mode
+                    if meta.get("source") == "user_upload":
+                        continue
                     key = doc[:120]
                     if key not in seen:
                         seen.add(key)
@@ -132,14 +209,13 @@ def _retrieve_context(exam: str, subject: str, query: str, n_results: int = 4) -
         if not all_docs:
             return "", 0
 
-        # Trim to requested n_results
-        all_docs  = all_docs[:n_results]
+        all_docs = all_docs[:n_results]
         all_metas = all_metas[:n_results]
 
         lines = ["### Context from Syllabus:\n"]
         for doc, meta in zip(all_docs, all_metas):
-            lang_tag  = {"en": "[EN]", "ta": "[TA]"}.get(meta.get("lang", ""), "")
-            topic     = meta.get("book_title", meta.get("topic", "Syllabus"))
+            lang_tag = {"en": "[EN]", "ta": "[TA]"}.get(meta.get("lang", ""), "")
+            topic = meta.get("book_title", meta.get("topic", "Syllabus"))
             lines.append(f"**{lang_tag} [{topic}]** {doc.strip()}\n")
 
         lines.append(
@@ -154,12 +230,154 @@ def _retrieve_context(exam: str, subject: str, query: str, n_results: int = 4) -
         return "", 0
 
 
-def _build_system_prompt(exam: str, subject: str, context_block: str = "", forced_lang: Optional[str] = None) -> str:
-    tag = EXAM_TAGS.get(exam, exam)
+# ── RAG Retrieval — Active File (vector search with doc_id filter) ────────────
 
-    lang_block = ""
+def _retrieve_doc_context(
+    exam: str, subject: str, query: str, doc_id: int, n_results: int = 5
+) -> Tuple[str, int]:
+    """
+    Semantic search restricted to a single uploaded document via doc_id filter.
+    """
+    try:
+        from app.core.chroma import get_collections_for_subject
+        collections = get_collections_for_subject(exam, subject)
+        if not collections:
+            return "", 0
+
+        all_docs: List[str] = []
+        all_metas: List[dict] = []
+        seen: set = set()
+
+        for col in collections:
+            try:
+                k = min(max(2, n_results), col.count())
+                if k == 0:
+                    continue
+                results = col.query(
+                    query_texts=[query],
+                    n_results=k,
+                    where={"doc_id": doc_id},
+                )
+                docs = results.get("documents", [[]])[0]
+                metas = results.get("metadatas", [[]])[0]
+                for doc, meta in zip(docs, metas):
+                    key = doc[:120]
+                    if key not in seen:
+                        seen.add(key)
+                        all_docs.append(doc)
+                        all_metas.append(meta)
+            except Exception as exc:
+                logger.warning("Doc-filtered retrieval error on %s: %s", col.name, exc)
+
+        if not all_docs:
+            return "", 0
+
+        all_docs = all_docs[:n_results]
+        all_metas = all_metas[:n_results]
+
+        lines = ["### Document Content (from uploaded notes):\n"]
+        for doc, meta in zip(all_docs, all_metas):
+            topic = meta.get("topic", "")
+            label = f"[{topic}]" if topic else ""
+            lines.append(f"**{label}** {doc.strip()}\n")
+
+        return "\n".join(lines) + "\n", len(all_docs)
+
+    except Exception as exc:
+        logger.warning("Doc retrieval failed: %s", exc)
+        return "", 0
+
+
+# ── RAG Retrieval — Load ALL chunks for a document ────────────────────────────
+
+def _load_all_doc_chunks(exam: str, subject: str, doc_id: int) -> Tuple[str, int, List[str]]:
+    """
+    Load ALL stored chunks for a specific document (bypasses vector search).
+    Used for EXPLAIN_DOCUMENT, SUMMARIZE_DOCUMENT, GENERATE_NOTES, etc.
+
+    Returns (context_block_str, chunk_count, unique_topics_list)
+    """
+    try:
+        from app.core.chroma import get_collections_for_subject
+        collections = get_collections_for_subject(exam, subject)
+        if not collections:
+            return "", 0, []
+
+        all_docs: List[str] = []
+        all_metas: List[dict] = []
+        seen_ids: set = set()
+
+        for col in collections:
+            try:
+                results = col.get(where={"doc_id": doc_id})
+                docs = results.get("documents", [])
+                metas = results.get("metadatas", [])
+                ids = results.get("ids", [])
+                for doc_id_item, doc, meta in zip(ids, docs, metas):
+                    if doc_id_item not in seen_ids:
+                        seen_ids.add(doc_id_item)
+                        all_docs.append(doc)
+                        all_metas.append(meta)
+            except Exception as exc:
+                logger.warning("Full-doc load error on %s: %s", col.name, exc)
+
+        if not all_docs:
+            return "", 0, []
+
+        # Sort by chunk_index for logical order
+        paired = sorted(zip(all_metas, all_docs), key=lambda x: x[0].get("chunk_index", 0))
+        all_metas, all_docs = zip(*paired) if paired else ([], [])
+
+        topics_found: List[str] = []
+        seen_topics: set = set()
+        lines = ["### Complete Document Content (from uploaded notes):\n"]
+        for doc, meta in zip(all_docs, all_metas):
+            topic = meta.get("topic", "")
+            if topic and topic not in seen_topics:
+                seen_topics.add(topic)
+                topics_found.append(topic)
+                lines.append(f"\n#### {topic}\n")
+            lines.append(doc.strip() + "\n")
+
+        return "\n".join(lines), len(all_docs), topics_found
+
+    except Exception as exc:
+        logger.warning("Full-doc chunk load failed: %s", exc)
+        return "", 0, []
+
+
+# ── Topics Metadata Retrieval ─────────────────────────────────────────────────
+
+def _get_topics_from_metadata(exam: str, subject: str, doc_id: int) -> List[str]:
+    """
+    Extract unique topic labels from ChromaDB chunk metadata for a document.
+    Much faster than loading full text.
+    """
+    try:
+        from app.core.chroma import get_collections_for_subject
+        collections = get_collections_for_subject(exam, subject)
+        topics: List[str] = []
+        seen: set = set()
+        for col in collections:
+            try:
+                results = col.get(where={"doc_id": doc_id}, include=["metadatas"])
+                for meta in results.get("metadatas", []):
+                    t = meta.get("topic", "")
+                    if t and t not in seen:
+                        seen.add(t)
+                        topics.append(t)
+            except Exception:
+                pass
+        return topics
+    except Exception:
+        return []
+
+
+# ── System Prompt Builder ─────────────────────────────────────────────────────
+
+def _build_lang_block(forced_lang: Optional[str] = None) -> str:
     if forced_lang == "ta":
-        lang_block = (
+        return (
             "- You MUST reply entirely in **Tamil**, regardless of what language the student writes in.\n"
             "  • Use clear, modern Tamil.\n"
             "  • For technical terms, write the Tamil word first, then the English term in parentheses — e.g. \"ஒளிச்சேர்க்கை (Photosynthesis)\".\n"
@@ -167,9 +385,9 @@ def _build_system_prompt(exam: str, subject: str, context_block: str = "", force
             "  • Equations and chemical formulas remain in their universal notation."
         )
     elif forced_lang == "en":
-        lang_block = "- You MUST reply entirely in **English**, regardless of what language the student writes in."
+        return "- You MUST reply entirely in **English**, regardless of what language the student writes in."
     else:
-        lang_block = (
+        return (
             "- Detect the language the student is writing in.\n"
             "- If the student writes in **Tamil**, reply entirely in **Tamil**.\n"
             "  • Use clear, modern Tamil.\n"
@@ -178,6 +396,26 @@ def _build_system_prompt(exam: str, subject: str, context_block: str = "", force
             "  • Equations and chemical formulas remain in their universal notation.\n"
             "- If the student writes in **English**, reply in **English**.\n"
             "- If the student mixes languages (Tanglish), match their style naturally."
+        )
+
+
+def _build_system_prompt(
+    exam: str,
+    subject: str,
+    context_block: str = "",
+    forced_lang: Optional[str] = None,
+    filename: Optional[str] = None,
+) -> str:
+    tag = EXAM_TAGS.get(exam, exam)
+    lang_block = _build_lang_block(forced_lang)
+
+    if filename:
+        return DOCUMENT_SYSTEM_PROMPT.format(
+            exam=exam,
+            subject=subject,
+            filename=filename,
+            lang_block=lang_block,
+            context_block=context_block,
         )
 
     return SYSTEM_PROMPT.format(
@@ -189,41 +427,98 @@ def _build_system_prompt(exam: str, subject: str, context_block: str = "", force
     )
 
 
-# ── Chat ───────────────────────────────────────────────────────────────────────
+# ── Chat ──────────────────────────────────────────────────────────────────────
 
 async def stream_chat(
     exam: str,
     subject: str,
-    history: List[Dict[str, str]],   # [{"role": "user"/"assistant", "content": "…"}]
+    history: List[Dict[str, str]],
     user_message: str,
     forced_lang: Optional[str] = None,
+    active_doc_id: Optional[int] = None,
+    active_doc_filename: Optional[str] = None,
+    space_id: Optional[int] = None,
 ) -> AsyncGenerator[str, None]:
     """
     Stream an AI response token-by-token using Groq's async client.
 
-    1. Detects the student's language.
-    2. Retrieves relevant syllabus chunks from ALL language collections.
-    3. Builds the system prompt with injected context.
-    4. Streams the LLM response.
+    Routing:
+      1. Classify intent (keyword heuristic).
+      2. Choose retrieval strategy based on intent + active_doc_id.
+      3. Build system prompt (document-grounded or syllabus mode).
+      4. Stream LLM response.
     """
-    context_block, n_chunks = _retrieve_context(exam, subject, user_message, n_results=4)
-    if context_block:
-        logger.debug("RAG: injecting %d context chunks (%d chars)", n_chunks, len(context_block))
-    else:
-        logger.debug("RAG: no context chunks found — answering from model knowledge")
+    from app.rag.retrieval_log import log_retrieval
 
-    lang = _detect_lang(user_message)
-    logger.debug("Detected student language: %s", lang)
+    t_start = time.monotonic()
+    intent = classify_intent(user_message)
+    context_block = ""
+    n_chunks = 0
+    n_topics = 0
+    filename = active_doc_filename
+
+    if active_doc_id:
+        # ── Active file is set — use document-aware retrieval ──────────────
+        if intent == "LIST_TOPICS":
+            # Return stored topics without loading full content
+            topics = _get_topics_from_metadata(exam, subject, active_doc_id)
+            n_topics = len(topics)
+            if topics:
+                topic_lines = "\n".join(f"- {t}" for t in topics)
+                context_block = f"### Topics in the uploaded document:\n{topic_lines}\n"
+            else:
+                context_block = "### Note: No specific topic headings were detected in this document.\n"
+
+        elif intent in ("EXPLAIN_DOCUMENT", "SUMMARIZE_DOCUMENT", "GENERATE_NOTES",
+                        "GENERATE_QUIZ", "GENERATE_FLASHCARDS"):
+            # Load entire document — bypass vector search
+            context_block, n_chunks, found_topics = _load_all_doc_chunks(exam, subject, active_doc_id)
+            n_topics = len(found_topics)
+
+        else:
+            # QUESTION / GENERAL — semantic search restricted to active doc
+            context_block, n_chunks = _retrieve_doc_context(
+                exam, subject, user_message, active_doc_id, n_results=5
+            )
+    else:
+        # ── No active file — search syllabus books only (option a) ─────────
+        intent = "QUESTION"  # reset intent since no doc context to operate on
+        context_block, n_chunks = _retrieve_syllabus_context(exam, subject, user_message, n_results=4)
+
+    retrieval_ms = (time.monotonic() - t_start) * 1000
+
+    try:
+        log_retrieval(
+            space_id=space_id or 0,
+            active_doc_id=active_doc_id,
+            intent=intent,
+            chunks_retrieved=n_chunks,
+            topics_used=n_topics,
+            retrieval_ms=retrieval_ms,
+        )
+    except Exception:
+        pass  # never let logging break the response
+
+    logger.debug(
+        "RAG intent=%s doc_id=%s chunks=%d topics=%d retrieval_ms=%.0f",
+        intent, active_doc_id, n_chunks, n_topics, retrieval_ms,
+    )
+
+    system_prompt = _build_system_prompt(exam, subject, context_block, forced_lang, filename)
 
     client = AsyncGroq(api_key=settings.GROQ_API_KEY)
-    messages = [{"role": "system", "content": _build_system_prompt(exam, subject, context_block, forced_lang)}]
+    messages = [{"role": "system", "content": system_prompt}]
     messages.extend(history)
     messages.append({"role": "user", "content": user_message})
+
+    # Use higher token budget for full-doc operations
+    max_tokens = 4096 if intent in ("EXPLAIN_DOCUMENT", "SUMMARIZE_DOCUMENT",
+                                     "GENERATE_NOTES") else 3000
 
     stream = await client.chat.completions.create(
         model=settings.GROQ_MODEL,
         messages=messages,
-        max_tokens=3000,
+        max_tokens=max_tokens,
         temperature=0.7,
         stream=True,
     )
@@ -240,15 +535,20 @@ async def get_chat_response(
     history: List[Dict[str, str]],
     user_message: str,
     forced_lang: Optional[str] = None,
+    active_doc_id: Optional[int] = None,
+    active_doc_filename: Optional[str] = None,
 ) -> str:
     """Non-streaming version — returns full response. Used as fallback or for testing."""
     parts = []
-    async for chunk in stream_chat(exam, subject, history, user_message, forced_lang):
+    async for chunk in stream_chat(
+        exam, subject, history, user_message, forced_lang,
+        active_doc_id, active_doc_filename
+    ):
         parts.append(chunk)
     return "".join(parts)
 
 
-# ── MCQ Generation ─────────────────────────────────────────────────────────────
+# ── MCQ Generation ────────────────────────────────────────────────────────────
 
 MCQ_SYSTEM = """\
 You are an expert MCQ question generator for Tamil Nadu competitive exams.
@@ -300,14 +600,9 @@ async def generate_mcqs(
 ) -> List[Dict]:
     """
     Generate MCQ questions using Groq, grounded in ChromaDB context.
-
-    Args:
-        lang: "en" or "ta" — controls output language of questions + explanations.
-
-    Returns a list of dicts: question, option_a/b/c/d, correct_option, explanation.
     """
     search_query = topic if topic else f"{exam} {subject} syllabus overview"
-    context_block, _ = _retrieve_context(exam, subject, search_query, n_results=10 if not topic else 5)
+    context_block, _ = _retrieve_syllabus_context(exam, subject, search_query, n_results=10 if not topic else 5)
     if context_block:
         context_block = (
             "### Reference Material from Syllabus:\n" + context_block +
@@ -315,7 +610,7 @@ async def generate_mcqs(
         )
 
     lang_instruction = _MCQ_LANG_INSTRUCTIONS.get(lang, _MCQ_LANG_INSTRUCTIONS["en"])
-    
+
     if topic:
         topic_instruction = f"Generate exactly {count} multiple-choice questions on the topic: \"{topic}\""
     else:
@@ -333,13 +628,12 @@ async def generate_mcqs(
     response = await client.chat.completions.create(
         model=settings.GROQ_MODEL,
         messages=[{"role": "user", "content": prompt}],
-        max_tokens=2048,
+        max_tokens=4096,
         temperature=0.5,
         stream=False,
     )
 
     raw = response.choices[0].message.content.strip()
-    # Strip markdown code fences if present
     if raw.startswith("```"):
         raw = raw.split("```")[1]
         if raw.startswith("json"):
@@ -357,7 +651,7 @@ async def generate_mcqs(
     return questions
 
 
-# ── Flashcard Generation ───────────────────────────────────────────────────────
+# ── Flashcard Generation ──────────────────────────────────────────────────────
 
 FLASHCARD_SYSTEM = """\
 You are an expert study-card creator for Tamil Nadu competitive exams.
@@ -400,15 +694,8 @@ async def generate_flashcards(
     count: int = 8,
     lang: str = "en",
 ) -> List[Dict]:
-    """
-    Generate flashcard pairs (front/back) using Groq, grounded in ChromaDB context.
-
-    Args:
-        lang: "en" or "ta" — controls output language of cards.
-
-    Returns a list of dicts: front, back.
-    """
-    context_block, _ = _retrieve_context(exam, subject, topic, n_results=5)
+    """Generate flashcard pairs (front/back) using Groq, grounded in ChromaDB context."""
+    context_block, _ = _retrieve_syllabus_context(exam, subject, topic, n_results=5)
     if context_block:
         context_block = (
             "### Reference Material from Syllabus:\n" + context_block +
@@ -429,7 +716,7 @@ async def generate_flashcards(
     response = await client.chat.completions.create(
         model=settings.GROQ_MODEL,
         messages=[{"role": "user", "content": prompt}],
-        max_tokens=2048,
+        max_tokens=4096,
         temperature=0.4,
         stream=False,
     )
@@ -452,6 +739,8 @@ async def generate_flashcards(
     return cards
 
 
+# ── Quiz Review ───────────────────────────────────────────────────────────────
+
 REVIEW_SYSTEM = """\
 You are an expert tutor for {exam} {subject}.
 A student has just completed a quiz. Here are the results of the questions they answered:
@@ -465,10 +754,11 @@ Specifically highlight which topics they are strong in and which topics they nee
 Be highly encouraging, personalized, and constructive. If they did poorly, tell them it's part of the learning process.
 """
 
+
 async def generate_quiz_review(
     exam: str,
     subject: str,
-    results: List[Dict[str, bool]],  # list of {"topic": str, "is_correct": bool}
+    results: List[Dict[str, bool]],
 ) -> str:
     """Generate a quick AI review of the student's quiz performance."""
     total = len(results)
@@ -482,7 +772,7 @@ async def generate_quiz_review(
     for i, r in enumerate(results, 1):
         status = "Correct" if r["is_correct"] else "Incorrect"
         results_lines.append(f"Q{i} (Topic: {r['topic']}) - {status}")
-    
+
     results_block = "\n".join(results_lines)
 
     client = AsyncGroq(api_key=settings.GROQ_API_KEY)
@@ -494,7 +784,7 @@ async def generate_quiz_review(
         total=total,
         percentage=percentage,
     )
-    
+
     response = await client.chat.completions.create(
         model=settings.GROQ_MODEL,
         messages=[{"role": "user", "content": prompt}],

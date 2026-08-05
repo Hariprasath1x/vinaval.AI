@@ -1,6 +1,6 @@
 import json
 from typing import List
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -90,7 +90,13 @@ async def chat(
 
     async def event_stream():
         try:
-            async for chunk in service.stream_ai_response(space, body.content, body.lang):
+            async for chunk in service.stream_ai_response(
+                space,
+                body.content,
+                body.lang,
+                active_doc_id=body.active_doc_id,
+                active_doc_filename=body.active_doc_filename,
+            ):
                 yield f"data: {json.dumps(chunk)}\n\n"
         except Exception as exc:
             yield f"data: {json.dumps({'error': str(exc)})}\n\n"

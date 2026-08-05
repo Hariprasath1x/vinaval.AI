@@ -4,15 +4,46 @@ Welcome to **Vinaval AI**! This is a smart, AI-powered learning platform designe
 
 ---
 
-## 📖 How It Works (The Flow)
+## 📖 Features & Flow
 
 Think of this app as having two main pieces working together: a **Frontend** (what you see and click) and a **Backend** (the brain that does the heavy lifting). 
 
-1. **You log in:** You can sign in using your Email or a Google account. The frontend talks to Firebase and the backend to securely log you in. You can also view and manage your profile details securely in the **Profile** page.
-2. **You pick a Learning Space:** You select an exam (like NEET) and a subject (like Physics). This opens up your personalized study dashboard.
-3. **You chat with the AI:** When you ask a question, the backend searches through its database (ChromaDB) to find relevant paragraphs from the official syllabus books. It sends these paragraphs to a super-smart AI model (Llama 3 via Groq) which reads them and answers your question. You can use the **Language Toggle** to force the AI to respond purely in English or purely in Tamil.
-4. **You upload your own notes:** If you have special PDF notes or question banks, you can upload them! The backend reads the text, chops it into smaller chunks, and saves it. Now, the AI will use your notes to answer your questions too!
-5. **You practice:** You can generate flashcards and quizzes. The AI creates them instantly based on the books and your uploads. When you take a quiz, you get graded and receive a personalized AI review of your performance. All your quiz history is saved and neatly tracked in the **Reports** tab.
+1. **Secure Authentication:** You can sign in using your Email or a Google account. The frontend talks to Firebase and the backend to securely log you in. You can also view and manage your profile details securely.
+2. **Personalized Learning Spaces:** You select an exam (like NEET) and a subject (like Physics). This creates an isolated study dashboard.
+3. **Intelligent Hybrid RAG Chat:** When you ask a question, the backend searches through its vector database (ChromaDB) to find relevant chunks from the official syllabus books. It sends these to a super-smart AI model (Llama 3 via Groq) which answers your question. You can use the **Language Toggle** to force the AI to respond purely in English or purely in Tamil.
+4. **Document Analysis:** Upload your own PDF notes or text files! The backend semantic-chunks the text, extracts metadata, and saves it. The AI can dynamically focus on explaining or summarizing your specific notes.
+5. **Exam Lab & Flashcards:** Generate flashcards and quizzes instantly based on the books and your uploads. Take a quiz, get graded, and receive a personalized AI review of your performance. Quiz history and accuracy stats are neatly tracked in the **Reports** tab.
+
+---
+
+## 📂 File Architecture
+
+The project is structured to strictly separate the FastAPI backend from the Streamlit frontend.
+
+```text
+vinavalai/
+├── backend/                  # FastAPI Backend API Server
+│   ├── alembic/              # Database migration scripts
+│   ├── app/
+│   │   ├── api/              # API Route handlers (v1)
+│   │   ├── core/             # Config, security, and database connections
+│   │   ├── models/           # SQLAlchemy ORM models
+│   │   ├── rag/              # AI LangChain pipelines and Document routing
+│   │   ├── repositories/     # Database CRUD operations
+│   │   ├── schemas/          # Pydantic validation schemas
+│   │   └── services/         # Core business logic
+│   ├── main.py               # FastAPI application entry point
+│   └── requirements.txt      # Backend Python dependencies
+├── frontend/                 # Streamlit Web Application
+│   ├── pages/                # Multi-page routing (Dashboard, Space, etc.)
+│   ├── utils/                # API helpers and reusable UI components
+│   ├── app.py                # Streamlit entry point (Login)
+│   └── requirements.txt      # Frontend Python dependencies
+├── tests/                    # End-to-End and Integration Tests
+├── docker-compose.yml        # Docker configuration for isolated deployments
+├── start.bat                 # Windows quick-start launcher
+└── start.sh                  # MacOS/Linux quick-start launcher
+```
 
 ---
 
@@ -20,11 +51,11 @@ Think of this app as having two main pieces working together: a **Frontend** (wh
 
 We keep things modern, fast, and lightweight:
 
-*   **Frontend (The Face):** Built with **Streamlit** (Python). It’s super fast for building AI apps without needing complex JavaScript frameworks.
-*   **Backend (The Brain):** Built with **FastAPI** (Python). It handles all the API requests, user uploads, and talks to the AI.
-*   **Main Database:** We use **SQLite** (`vinavalai.db`). It stores user accounts, chat history, quiz attempts, and saved flashcards. 
-*   **Vector Database (For AI Memory):** We use **ChromaDB**. When you upload a book or notes, it converts the text into "embeddings" (a format the AI understands) so it can search through thousands of pages in milliseconds. We use a special multilingual model so it understands Tamil perfectly.
-*   **The AI Engine:** Powered by **Groq** using the **Llama 3 70B** model. It's incredibly fast and smart.
+*   **Frontend:** Built with **Streamlit** (Python) for rapid, data-centric AI application UI.
+*   **Backend:** Built with **FastAPI** (Python) for asynchronous, high-performance API handling.
+*   **Relational Database:** **SQLite** (`vinavalai.db`) stores user accounts, chat history, quiz attempts, and flashcards. 
+*   **Vector Database:** **ChromaDB**. Stores document embeddings using `paraphrase-multilingual-MiniLM-L12-v2` so it understands both English and Tamil natively.
+*   **LLM Engine:** Powered by **Groq** using the **Llama 3 70B** model for incredibly fast inference.
 
 ---
 

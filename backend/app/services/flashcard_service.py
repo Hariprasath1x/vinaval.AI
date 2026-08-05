@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.repositories.flashcard_repository import FlashcardRepository
 from app.models.flashcard import Flashcard
 from app.models.space import LearningSpace
-from app.schemas.flashcard import GenerateFlashcardsRequest, FlashcardOut, FlashcardSetOut
+from app.schemas.flashcard import GenerateFlashcardsRequest
 from app.rag.chain import generate_flashcards as ai_generate_flashcards
 
 

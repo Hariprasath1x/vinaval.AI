@@ -25,10 +25,6 @@ share/python-wheels/
 .installed.cfg
 *.egg
 
-# PyInstaller
-*.manifest
-*.spec
-
 # Installer logs
 pip-log.txt
 
@@ -40,14 +36,20 @@ htmlcov/
 .coverage.*
 .cache
 .pytest_cache/
+tests/
+e2e_tests/
 
 # Environments
 .env
 .venv
 env/
 venv/
+ENV/
+env.bak/
+venv.bak/
 backend/.env
 frontend/.env
+backend/venv/
 
 # OS metadata
 .DS_Store
@@ -55,25 +57,34 @@ Thumbs.db
 
 # Databases & Vector DBs
 *.db
+*.sqlite3
 backend/vinavalai.db
 backend/chroma_db/
 books/
 
-# Firebase Secrets
+# Secrets and Credentials
 backend/firebase-service-account.json
+credentials.json
+*.pem
 
 # IDEs
 .vscode/
 .idea/
+*.swp
+*.swo
+.git/
+.gitignore
 
 # Streamlit
 frontend/.streamlit/
 
-# Node
-frontend_react/node_modules/
-
-# Local test scripts
+# Local test scripts & artifacts
 backend/cleanup.py
 backend/alembic.ini
 backend/list_tables.py
 backend/uploads/
+logs/
+
+# Docker
+docker-compose.yml
+.dockerignore

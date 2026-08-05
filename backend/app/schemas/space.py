@@ -27,6 +27,8 @@ class SpaceOut(BaseModel):
 class MessageCreate(BaseModel):
     content: str
     lang: Optional[str] = "auto"
+    active_doc_id: Optional[int] = None           # doc_id of the active uploaded file
+    active_doc_filename: Optional[str] = None     # filename for display in system prompt
 
 
 class MessageOut(BaseModel):

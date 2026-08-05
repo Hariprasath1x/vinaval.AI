@@ -43,6 +43,10 @@ if "token" not in st.session_state:
     st.page_link("app.py", label="Go to Login →")
     st.stop()
 
+from utils.ui import render_sidebar
+render_sidebar()
+
+
 space_id = st.session_state.get("current_space_id")
 if not space_id:
     st.warning("No space selected. Go to Dashboard or Select Exam.")
@@ -125,17 +129,6 @@ NEET_TOPICS = {
         "Animal Husbandry", "Biodiversity and Conservation",
         "Environmental Issues",
     ],
-    "Bio Chemistry": [
-        "Biomolecules — Carbohydrates", "Biomolecules — Proteins",
-        "Biomolecules — Lipids", "Biomolecules — Nucleic Acids",
-        "Enzymes", "Vitamins and Minerals",
-        "Metabolism Overview", "Glycolysis", "Krebs Cycle / TCA Cycle",
-        "Oxidative Phosphorylation", "Gluconeogenesis",
-        "Fatty Acid Synthesis and Oxidation", "Amino Acid Metabolism",
-        "Nitrogen Metabolism", "Hormones and Signal Transduction",
-        "DNA Replication and Repair", "Transcription", "Translation",
-        "Regulation of Gene Expression", "Metabolic Disorders",
-    ],
 }
 
 def _get_topics(subj: str):
@@ -172,25 +165,36 @@ tab_learn, tab_materials, tab_flashcards, tab_quiz, tab_reports, tab_notes = st.
 
 with tab_learn:
     st.subheader("🧠 AI Tutor — Ask Anything")
-    st.caption(
-        "Your AI tutor uses the **pre-loaded syllabus books** and any **documents you upload** "
-        "to answer your questions. Ask topic explanations, doubts, or ask it to quiz you!"
-    )
 
-    # Load history from backend on first render
-    if "chat_messages" not in st.session_state:
-        with st.spinner("Loading chat history..."):
-            history = get_messages(space_id)
-        st.session_state.chat_messages = [
-            {"role": m["role"], "content": m["content"]} for m in history
-        ]
+    # ── Active File Panel ─────────────────────────────────────────────────────
+    active_doc = st.session_state.get("active_doc")  # {"id": int, "filename": str, "chunk_count": int, "topics": []}
 
-    # Display conversation
-    for msg in st.session_state.chat_messages:
-        with st.chat_message(msg["role"]):
-            st.markdown(msg["content"])
+    if active_doc:
+        with st.container(border=True):
+            c1, c2, c3 = st.columns([0.05, 0.75, 0.2])
+            with c1:
+                st.markdown("📎")
+            with c2:
+                st.markdown(
+                    f"**Knowledge Source:** `{active_doc['filename']}`  "
+                    f"&nbsp;&nbsp;`{active_doc.get('chunk_count', '?')} chunks`"
+                )
+                if active_doc.get("topics"):
+                    topics_preview = ", ".join(active_doc["topics"][:4])
+                    if len(active_doc["topics"]) > 4:
+                        topics_preview += f" +{len(active_doc['topics']) - 4} more"
+                    st.caption(f"Topics detected: {topics_preview}")
+            with c3:
+                if st.button("× Remove", key="remove_active_doc", help="Return to syllabus-only mode"):
+                    del st.session_state["active_doc"]
+                    st.rerun()
+    else:
+        st.caption(
+            "📚 **Using:** Pre-loaded syllabus books only.  "
+            "Upload a document in the **Materials** tab and click **Chat with this file** to focus on your notes."
+        )
 
-    # Clear chat / Options
+    # Options
     with st.expander("⚙️ Options", expanded=False):
         st.session_state["chat_lang"] = st.radio(
             "AI Reply Language",
@@ -204,23 +208,55 @@ with tab_learn:
             st.session_state.chat_messages = []
             st.rerun()
 
-    # Input
-    if prompt := st.chat_input("Ask your AI tutor..."):
-        # Show user message immediately
-        st.session_state.chat_messages.append({"role": "user", "content": prompt})
-        with st.chat_message("user"):
-            st.markdown(prompt)
+    st.divider()
 
-        # Stream assistant response
-        with st.chat_message("assistant"):
-            response_placeholder = st.empty()
-            full_response = ""
-            with st.spinner(""):
-                chat_lang = st.session_state.get("chat_lang", "auto")
-                for chunk in stream_chat(space_id, prompt, chat_lang):
-                    full_response += chunk
-                    response_placeholder.markdown(full_response + "▌")
-            response_placeholder.markdown(full_response)
+    # Load history from backend on first render
+    if "chat_messages" not in st.session_state:
+        with st.spinner("Loading chat history..."):
+            history = get_messages(space_id)
+        st.session_state.chat_messages = [
+            {"role": m["role"], "content": m["content"]} for m in history
+        ]
+
+    # Container for all messages so they render ABOVE the sticky chat input
+    messages_container = st.container()
+
+    # Display conversation history
+    with messages_container:
+        for msg in st.session_state.chat_messages:
+            with st.chat_message(msg["role"]):
+                st.markdown(msg["content"])
+
+    # Input
+    _active = st.session_state.get("active_doc")
+    _hint = (
+        f"Ask about '{_active['filename']}'... (e.g. 'Explain all topics' or 'Summarize this file')"
+        if _active else "Ask your AI tutor..."
+    )
+    if prompt := st.chat_input(_hint):
+        st.session_state.chat_messages.append({"role": "user", "content": prompt})
+        
+        # Render new messages inside the container
+        with messages_container:
+            with st.chat_message("user"):
+                st.markdown(prompt)
+
+            with st.chat_message("assistant"):
+                response_placeholder = st.empty()
+                full_response = ""
+                with st.spinner(""):
+                    chat_lang = st.session_state.get("chat_lang", "auto")
+                    _active = st.session_state.get("active_doc")
+                    for chunk in stream_chat(
+                        space_id,
+                        prompt,
+                        chat_lang,
+                        active_doc_id=_active["id"] if _active else None,
+                        active_doc_filename=_active["filename"] if _active else None,
+                    ):
+                        full_response += chunk
+                        response_placeholder.markdown(full_response + "▌")
+                response_placeholder.markdown(full_response)
 
         st.session_state.chat_messages.append({"role": "assistant", "content": full_response})
 
@@ -232,12 +268,12 @@ with tab_learn:
 with tab_materials:
     st.subheader("📚 Your Study Materials")
     st.info(
-        "📌 **How it works:** Upload your **question banks**, **topic notes**, or **practice papers** "
-        "(PDF or TXT). They are indexed into the knowledge base and the AI will use them alongside "
-        "the **pre-loaded syllabus books** when answering your questions in the Learn tab."
+        "📌 Upload your **question banks**, **topic notes**, or **practice papers** (PDF or TXT). "
+        "The AI extracts topics and creates semantic chunks. "
+        "Click **Chat with this file** to focus the AI tutor on that document."
     )
 
-    # ── Upload form
+    # ── Upload form ───────────────────────────────────────────────────────────
     with st.form("upload_form", clear_on_submit=True):
         st.markdown("**Upload a Document**")
         uploaded_file = st.file_uploader(
@@ -247,20 +283,61 @@ with tab_materials:
         )
         submitted = st.form_submit_button("📤 Upload & Index", type="primary")
         if submitted and uploaded_file:
-            with st.spinner(f"Uploading and indexing '{uploaded_file.name}'..."):
+            with st.spinner(f"Uploading and indexing '{uploaded_file.name}' — extracting topics..."):
                 result = upload_document(space_id, uploaded_file.read(), uploaded_file.name)
             if result:
-                st.success(
-                    f"✅ '{result['filename']}' uploaded and indexed! "
-                    "The AI can now use this content to answer your questions."
-                )
+                st.session_state["last_upload_result"] = result
                 st.cache_data.clear()
         elif submitted:
             st.warning("Please select a file first.")
 
+    # ── Upload result card ────────────────────────────────────────────────────
+    if "last_upload_result" in st.session_state:
+        r = st.session_state["last_upload_result"]
+        with st.container(border=True):
+            st.success(f"✅ **{r['filename']}** uploaded successfully!")
+            c1, c2, c3 = st.columns(3)
+            with c1:
+                st.metric("Chunks Indexed", r.get("chunk_count", "?"))
+            with c2:
+                st.metric("Pages / Sections", r.get("pages", "?"))
+            with c3:
+                st.metric("Topics Detected", len(r.get("topics", [])))
+
+            topics = r.get("topics", [])
+            if topics:
+                st.markdown("**Detected Topics:**")
+                # Display in 2 columns
+                half = (len(topics) + 1) // 2
+                tc1, tc2 = st.columns(2)
+                with tc1:
+                    for t in topics[:half]:
+                        st.markdown(f"• {t}")
+                with tc2:
+                    for t in topics[half:]:
+                        st.markdown(f"• {t}")
+            else:
+                st.caption("No distinct topic headings detected — the document was chunked by content blocks.")
+
+            st.divider()
+            if st.button(
+                "💬 Chat with this file →",
+                key="chat_with_upload",
+                type="primary",
+                help="Opens the AI Chat tab with this file as the active knowledge source",
+            ):
+                st.session_state["active_doc"] = {
+                    "id":          r["id"],
+                    "filename":    r["filename"],
+                    "chunk_count": r.get("chunk_count"),
+                    "topics":      r.get("topics", []),
+                }
+                del st.session_state["last_upload_result"]
+                st.switch_page("pages/3_Space.py")  # reload to switch to Learn tab
+
     st.divider()
 
-    # ── Existing documents
+    # ── Existing documents ────────────────────────────────────────────────────
     st.markdown("**Indexed Documents**")
     docs = list_documents(space_id)
 
@@ -268,20 +345,37 @@ with tab_materials:
         st.info("No documents uploaded yet. Upload your first document above!")
     else:
         for doc in docs:
-            col_name, col_type, col_action = st.columns([4, 1, 1])
-            with col_name:
-                icon = "📄" if doc["file_type"] == "pdf" else "📝"
-                st.write(f"{icon} {doc['filename']}")
-            with col_type:
-                st.caption(doc["file_type"].upper())
-            with col_action:
-                if doc.get("source") == "book":
-                    st.caption("📚 Book")
-                else:
-                    if st.button("🗑️", key=f"del_{doc['id']}", help="Delete this document"):
-                        if delete_document(space_id, doc["id"]):
-                            st.success("Deleted.")
-                            st.rerun()
+            with st.container(border=True):
+                col_name, col_chunks, col_action1, col_action2 = st.columns([4, 1, 1, 1])
+                with col_name:
+                    icon = "📄" if doc["file_type"] == "pdf" else "📝"
+                    st.write(f"{icon} **{doc['filename']}**")
+                    topics = doc.get("topics", [])
+                    if topics:
+                        st.caption(", ".join(topics[:3]) + (f" +{len(topics)-3} more" if len(topics) > 3 else ""))
+                with col_chunks:
+                    chunks = doc.get("chunk_count")
+                    st.caption(f"{chunks} chunks" if chunks else doc["file_type"].upper())
+                with col_action1:
+                    if doc.get("source") == "book":
+                        st.caption("📚 Book")
+                    else:
+                        if st.button("💬", key=f"chat_{doc['id']}", help="Chat with this file"):
+                            st.session_state["active_doc"] = {
+                                "id":          doc["id"],
+                                "filename":    doc["filename"],
+                                "chunk_count": doc.get("chunk_count"),
+                                "topics":      doc.get("topics", []),
+                            }
+                            st.switch_page("pages/3_Space.py")
+                with col_action2:
+                    if doc.get("source") != "book":
+                        if st.button("🗑️", key=f"del_{doc['id']}", help="Delete this document"):
+                            if delete_document(space_id, doc["id"]):
+                                if st.session_state.get("active_doc", {}).get("id") == doc["id"]:
+                                    del st.session_state["active_doc"]
+                                st.success("Deleted.")
+                                st.rerun()
 
 
 # ─────────────────────────────────────────────────────────────────────────────

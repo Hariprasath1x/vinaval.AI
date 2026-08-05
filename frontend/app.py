@@ -60,7 +60,7 @@ st.markdown("""
     border: 1px solid rgba(255,255,255,0.08);
   }
   .stTabs [data-baseweb="tab"] {
-    border-radius: 8px; padding: 8px 16px; font-size: 13px;
+    border-radius: 8px; padding: 8px 16px; font-size: 16px;
     color: #94a3b8 !important;
   }
   .stTabs [aria-selected="true"] {
@@ -75,14 +75,14 @@ st.markdown("""
     border-radius: 8px !important; color: #f1f5f9 !important;
   }
   input:focus { border-color: #a78bfa !important; }
-  label { color: #cbd5e1 !important; font-size: 13px !important; }
+  label { color: #cbd5e1 !important; font-size: 16px !important; }
 
   /* Primary button */
   .stButton > button[kind="primary"] {
     background: linear-gradient(135deg, #7c3aed, #4f46e5) !important;
     border: none !important; border-radius: 9px !important;
     font-weight: 600 !important; letter-spacing: 0.02em !important;
-    padding: 0.65rem !important; font-size: 14px !important;
+    padding: 0.65rem !important; font-size: 16px !important;
     transition: all 0.2s !important;
   }
   .stButton > button[kind="primary"]:hover {
@@ -101,7 +101,7 @@ st.markdown("""
   .pill-row { display:flex; flex-wrap:wrap; gap:8px; justify-content:center; margin:1.2rem 0 0.5rem; }
   .pill {
     background: rgba(167,139,250,0.12); border:1px solid rgba(167,139,250,0.25);
-    color: #c4b5fd; border-radius:20px; padding:4px 12px; font-size:12px;
+    color: #c4b5fd; border-radius:20px; padding:6px 14px; font-size:14px;
   }
 </style>
 """, unsafe_allow_html=True)
@@ -259,7 +259,7 @@ with tab_signup:
 with tab_forgot:
     st.markdown("#### Reset your password")
     st.markdown(
-        "<p style='color:#94a3b8; font-size:13px;'>"
+        "<p style='color:#94a3b8; font-size:15px;'>"
         "Enter the email you used to sign up. We'll send a reset link to your inbox. "
         "The link expires in 1 hour."
         "</p>",

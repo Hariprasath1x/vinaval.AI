@@ -72,7 +72,14 @@ class SpaceService:
     async def save_assistant_message(self, space_id: int, content: str) -> ChatMessage:
         return await self.repo.add_message(space_id, "assistant", content)
 
-    async def stream_ai_response(self, space: LearningSpace, user_message: str, forced_lang: Optional[str] = None):
+    async def stream_ai_response(
+        self,
+        space: LearningSpace,
+        user_message: str,
+        forced_lang: Optional[str] = None,
+        active_doc_id: Optional[int] = None,
+        active_doc_filename: Optional[str] = None,
+    ):
         """
         Generator: yields SSE-formatted chunks, then saves both messages to DB.
         """
@@ -85,7 +92,16 @@ class SpaceService:
 
         # Stream AI response
         full_response: list[str] = []
-        async for chunk in stream_chat(space.exam_id, space.subject, history, user_message, forced_lang):
+        async for chunk in stream_chat(
+            space.exam_id,
+            space.subject,
+            history,
+            user_message,
+            forced_lang,
+            active_doc_id=active_doc_id,
+            active_doc_filename=active_doc_filename,
+            space_id=space.id,
+        ):
             full_response.append(chunk)
             yield chunk
 

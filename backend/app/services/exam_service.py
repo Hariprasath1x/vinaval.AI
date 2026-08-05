@@ -1,6 +1,6 @@
 from typing import List
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.core.constants import EXAM_DATA, EXAM_MAP, VALID_EXAM_IDS
+from app.core.constants import EXAM_DATA, VALID_EXAM_IDS
 from app.schemas.exam import ExamSchema, SubjectSchema, ExamSelectionResponse
 from app.repositories.user_repository import UserRepository
 from app.models.user import User

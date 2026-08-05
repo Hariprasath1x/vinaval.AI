@@ -35,7 +35,6 @@ EXAM_DATA: List[ExamInfo] = [
             SubjectInfo(name="Chemistry", icon="🧪",  color="green"),
             SubjectInfo(name="Botany",    icon="🌿",  color="emerald"),
             SubjectInfo(name="Zoology",   icon="🦎",  color="amber"),
-            SubjectInfo(name="Bio Chemistry", icon="🧬", color="lime"),
         ],
     ),
     ExamInfo(

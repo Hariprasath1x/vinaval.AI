@@ -12,6 +12,10 @@ if "token" not in st.session_state:
     st.page_link("app.py", label="Go to Login →")
     st.stop()
 
+from utils.ui import render_sidebar
+render_sidebar()
+
+
 user = st.session_state.get("user", {})
 st.title(f"👋 Welcome back, {user.get('name', 'Student')}!")
 st.markdown("Your active Learning Spaces are below. Each space contains your AI tutor, uploaded materials, flashcards, and quiz progress.")
@@ -31,7 +35,7 @@ with st.spinner("Loading your spaces..."):
 
 EXAM_ICONS = {"NEET": "🩺", "TNPSC": "🏛️"}
 SUBJECT_ICONS = {
-    "Physics": "⚛️", "Chemistry": "🧪", "Botany": "🌿", "Zoology": "🦎", "Bio Chemistry": "🧬",
+    "Physics": "⚛️", "Chemistry": "🧪", "Botany": "🌿", "Zoology": "🦎",
     "History": "📜", "Geography": "🌍", "Polity": "⚖️",
     "Economics": "📈", "Science": "🔬", "Current Affairs": "📰",
 }
@@ -85,32 +89,31 @@ else:
                 st.subheader(f"{subj_icon} {subj}")
                 st.caption(f"{exam_icon} {exam} · Created: {space.get('created_at', '')[:10]}")
 
-                col_open, col_del = st.columns([3, 1])
-                with col_open:
-                    if st.button("Open Space →", key=f"open_{space['id']}", type="primary", use_container_width=True):
-                        st.session_state["current_space_id"] = space["id"]
-                        st.session_state["current_space"] = space
-                        st.switch_page("pages/3_Space.py")
-                with col_del:
-                    # Toggle confirm state per space
-                    confirm_key = f"confirm_del_{space['id']}"
-                    if not st.session_state.get(confirm_key):
+                confirm_key = f"confirm_del_{space['id']}"
+                if not st.session_state.get(confirm_key):
+                    col_open, col_del = st.columns([3, 1])
+                    with col_open:
+                        if st.button("Open Space →", key=f"open_{space['id']}", type="primary", use_container_width=True):
+                            st.session_state["current_space_id"] = space["id"]
+                            st.session_state["current_space"] = space
+                            st.switch_page("pages/3_Space.py")
+                    with col_del:
                         if st.button("🗑️", key=f"del_{space['id']}", help="Delete this space", use_container_width=True):
                             st.session_state[confirm_key] = True
                             st.rerun()
-                    else:
-                        st.warning(f"Delete **{subj}**?")
-                        col_yes, col_no = st.columns(2)
-                        with col_yes:
-                            if st.button("✅ Yes", key=f"del_yes_{space['id']}", use_container_width=True):
-                                if delete_space(space["id"]):
-                                    st.session_state.pop(confirm_key, None)
-                                    st.success("Space deleted.")
-                                    st.rerun()
-                        with col_no:
-                            if st.button("❌ No", key=f"del_no_{space['id']}", use_container_width=True):
+                else:
+                    st.warning(f"Delete **{subj}**?")
+                    col_yes, col_no = st.columns(2)
+                    with col_yes:
+                        if st.button("✅ Yes", key=f"del_yes_{space['id']}", use_container_width=True):
+                            if delete_space(space["id"]):
                                 st.session_state.pop(confirm_key, None)
+                                st.success("Space deleted.")
                                 st.rerun()
+                    with col_no:
+                        if st.button("❌ No", key=f"del_no_{space['id']}", use_container_width=True):
+                            st.session_state.pop(confirm_key, None)
+                            st.rerun()
 
 st.divider()
 st.page_link("pages/2_Select_Exam.py", label="➕ Add a New Learning Space")

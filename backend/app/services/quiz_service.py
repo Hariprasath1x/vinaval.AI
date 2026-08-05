@@ -170,7 +170,7 @@ class QuizService:
                 subject=space.subject,
                 results=results_list,
             )
-        except Exception as e:
+        except Exception:
             review_text = "Good effort! Keep studying and practicing to improve your scores."
 
         return QuizReviewResponse(review=review_text)

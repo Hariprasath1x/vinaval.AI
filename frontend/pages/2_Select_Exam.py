@@ -12,6 +12,10 @@ if "token" not in st.session_state:
     st.page_link("app.py", label="Go to Login →")
     st.stop()
 
+from utils.ui import render_sidebar
+render_sidebar()
+
+
 # ── Exam & Subject Data ───────────────────────────────────────────────────────
 
 EXAMS = {
@@ -24,7 +28,6 @@ EXAMS = {
             {"name": "Chemistry",     "icon": "🧪"},
             {"name": "Botany",        "icon": "🌿"},
             {"name": "Zoology",       "icon": "🦎"},
-            {"name": "Bio Chemistry", "icon": "🧬"},
         ],
     },
     "TNPSC": {

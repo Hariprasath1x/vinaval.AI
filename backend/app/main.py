@@ -1,7 +1,6 @@
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
-import os
 from app.core.config import get_settings
 from app.core.firebase import init_firebase
 from app.api.v1 import router as api_v1_router

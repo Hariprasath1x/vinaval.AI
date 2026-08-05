@@ -19,8 +19,8 @@ Flow:
 """
 import streamlit as st
 
-_BACKEND_URL = "http://localhost:8000"
-_STREAMLIT_URL = "http://localhost:8501"
+_BACKEND_URL = "http://127.0.0.1:8000"
+_STREAMLIT_URL = "http://127.0.0.1:8501"
 
 
 def render_google_signin_button(label: str = "Continue with Google") -> None:

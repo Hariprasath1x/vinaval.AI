@@ -9,7 +9,7 @@ from app.schemas.auth import UserCreate, TokenResponse, UserResponse, SignupRequ
 
 def _hash_password(plain: str) -> str:
     pwd_bytes = plain.encode('utf-8')[:72]
-    return bcrypt.hashpw(pwd_bytes, bcrypt.gensalt()).decode('utf-8')
+    return bcrypt.hashpw(pwd_bytes, bcrypt.gensalt(rounds=10)).decode('utf-8')
 
 
 def _verify_password(plain: str, hashed: str) -> bool:
