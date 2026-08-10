@@ -1,29 +1,27 @@
 #!/bin/bash
 echo "============================================"
-echo "  Vinaval AI — Starting Application"
+echo "  Vinaval AI — Starting Backend"
 echo "============================================"
 echo ""
 
-echo "[1/2] Starting FastAPI Backend..."
 cd "$(dirname "$0")/backend"
 venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 &
 BACKEND_PID=$!
 
-sleep 3
-
-echo "[2/2] Starting Streamlit Frontend..."
-cd "$(dirname "$0")/frontend"
-../backend/venv/bin/python -m streamlit run app.py --server.port 8501 --server.address localhost &
-FRONTEND_PID=$!
-
 echo ""
 echo "============================================"
-echo "  Application Running:"
-echo "  Backend  : http://localhost:8000"
-echo "  Frontend : http://localhost:8501"
+echo "  Backend Running:"
+echo "  http://localhost:8000"
 echo "============================================"
 echo ""
-echo "Press Ctrl+C to stop all services."
+echo "👉 TO START THE FRONTEND:"
+echo "   Open a new terminal, and run:"
+echo "   cd frontend"
+echo "   npm install"
+echo "   npm run dev"
+echo "============================================"
+echo ""
+echo "Press Ctrl+C to stop the backend."
 
-trap "kill $BACKEND_PID $FRONTEND_PID 2>/dev/null; echo 'Stopped.'" EXIT
+trap "kill $BACKEND_PID 2>/dev/null; echo 'Stopped.'" EXIT
 wait

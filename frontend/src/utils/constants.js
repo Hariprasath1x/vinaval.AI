@@ -1,0 +1,58 @@
+export const NEET_TOPICS = {
+  "Physics": [
+    "Physical World and Units", "Motion in a Straight Line", "Motion in a Plane",
+    "Laws of Motion", "Work, Energy and Power", "System of Particles & Rotational Motion",
+    "Gravitation", "Mechanical Properties of Solids", "Mechanical Properties of Fluids",
+    "Thermal Properties of Matter", "Thermodynamics", "Kinetic Theory of Gases",
+    "Oscillations", "Waves", "Electric Charges and Fields", "Electrostatic Potential and Capacitance",
+    "Current Electricity", "Moving Charges and Magnetism", "Magnetism and Matter",
+    "Electromagnetic Induction", "Alternating Current", "Electromagnetic Waves",
+    "Ray Optics and Optical Instruments", "Wave Optics",
+    "Dual Nature of Radiation and Matter", "Atoms", "Nuclei",
+    "Semiconductor Electronics", "Communication Systems",
+  ],
+  "Chemistry": [
+    "Some Basic Concepts of Chemistry", "Structure of Atom", "Classification of Elements",
+    "Chemical Bonding and Molecular Structure", "States of Matter", "Thermodynamics",
+    "Equilibrium", "Redox Reactions", "Hydrogen",
+    "The s-Block Elements", "The p-Block Elements", "Organic Chemistry Basics",
+    "Hydrocarbons", "Environmental Chemistry",
+    "Solid State", "Solutions", "Electrochemistry", "Chemical Kinetics",
+    "Surface Chemistry", "General Principles of Extraction of Metals",
+    "The p-Block Elements (Period 3)", "The d and f Block Elements",
+    "Coordination Compounds", "Haloalkanes and Haloarenes",
+    "Alcohols, Phenols and Ethers", "Aldehydes, Ketones and Carboxylic Acids",
+    "Amines", "Biomolecules", "Polymers", "Chemistry in Everyday Life",
+  ],
+  "Botany": [
+    "The Living World", "Biological Classification", "Plant Kingdom",
+    "Morphology of Flowering Plants", "Anatomy of Flowering Plants",
+    "Cell: The Unit of Life", "Cell Cycle and Cell Division",
+    "Photosynthesis in Higher Plants", "Respiration in Plants",
+    "Plant Growth and Development", "Transport in Plants",
+    "Mineral Nutrition", "Sexual Reproduction in Flowering Plants",
+    "Principles of Inheritance and Variation", "Molecular Basis of Inheritance",
+    "Evolution", "Strategies for Enhancement in Food Production",
+    "Microbes in Human Welfare", "Biotechnology: Principles and Processes",
+    "Biotechnology and its Applications", "Organisms and Populations",
+    "Ecosystem", "Biodiversity and Conservation", "Environmental Issues",
+  ],
+  "Zoology": [
+    "Animal Kingdom", "Structural Organisation in Animals",
+    "Human Physiology: Digestion and Absorption",
+    "Human Physiology: Breathing and Exchange of Gases",
+    "Human Physiology: Body Fluids and Circulation",
+    "Human Physiology: Excretory Products and their Elimination",
+    "Human Physiology: Locomotion and Movement",
+    "Human Physiology: Neural Control and Coordination",
+    "Human Physiology: Chemical Coordination and Integration",
+    "Human Reproduction", "Reproductive Health",
+    "Genetics and Evolution", "Human Health and Disease",
+    "Animal Husbandry", "Biodiversity and Conservation",
+    "Environmental Issues",
+  ],
+};
+
+export const getTopics = (subject) => {
+  return NEET_TOPICS[subject] || [];
+};

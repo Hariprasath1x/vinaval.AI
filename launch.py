@@ -2,15 +2,15 @@
 launch.py — Vinaval AI Robust Launcher
 =======================================
 Single source of truth for startup configuration.
-This script replaces the brittle `start cmd /k` approach in start.bat.
 
 What it does:
-  1. Kills any orphaned processes on the backend/frontend ports.
-  2. Starts uvicorn (backend) and streamlit (frontend) as managed subprocesses.
-  3. Waits with health checks until BOTH are genuinely reachable.
-  4. Opens the browser only after confirmed HTTP 200.
-  5. On Ctrl+C, terminates BOTH child processes cleanly.
-  6. Logs everything to logs/startup_<timestamp>.log.
+  1. Kills any orphaned processes on the backend port.
+  2. Starts uvicorn (backend) as a managed subprocess.
+  3. Waits with health checks until it is genuinely reachable.
+  4. On Ctrl+C, terminates the child process cleanly.
+  5. Logs everything to logs/startup_<timestamp>.log.
+  
+Note: The React frontend should be started separately using `npm run dev` in the frontend directory.
 """
 
 import os
@@ -20,7 +20,6 @@ import socket
 import time
 import signal
 import logging
-import urllib.request
 from datetime import datetime
 from pathlib import Path
 
@@ -36,8 +35,6 @@ LOG_FILE     = LOG_DIR / f"startup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.lo
 
 BACKEND_HOST  = "127.0.0.1"
 BACKEND_PORT  = 8000
-FRONTEND_HOST = "127.0.0.1"
-FRONTEND_PORT = 8501
 
 HEALTH_TIMEOUT  = 90   # seconds to wait for each server to come up
 HEALTH_INTERVAL = 1    # seconds between health-check polls
@@ -115,36 +112,18 @@ def wait_for_port(host: str, port: int, label: str = "") -> bool:
     return False
 
 
-def wait_for_http(url: str) -> bool:
-    """Spin-poll URL until it returns a non-5xx HTTP response."""
-    deadline = time.time() + HEALTH_TIMEOUT
-    while time.time() < deadline:
-        try:
-            with urllib.request.urlopen(url, timeout=2) as resp:
-                if resp.status < 500:
-                    return True
-        except Exception:
-            pass
-        sys.stdout.write(".")
-        sys.stdout.flush()
-        time.sleep(HEALTH_INTERVAL)
-    print()
-    return False
-
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Main launcher
 # ─────────────────────────────────────────────────────────────────────────────
 def main():
     # ── Header ──
     log.info("=" * 60)
-    log.info("  Vinaval AI — Robust Launcher")
+    log.info("  Vinaval AI — Robust Launcher (Backend Only)")
     log.info("=" * 60)
     log.info(f"  Root             : {ROOT}")
     log.info(f"  Python (venv)    : {VENV_PYTHON}")
     log.info(f"  Working dir      : {os.getcwd()}")
     log.info(f"  Backend address  : http://{BACKEND_HOST}:{BACKEND_PORT}")
-    log.info(f"  Frontend address : http://{FRONTEND_HOST}:{FRONTEND_PORT}")
     log.info(f"  Log file         : {LOG_FILE}")
 
     # ── Pre-flight checks ──
@@ -158,25 +137,10 @@ def main():
         )
         sys.exit(1)
 
-    if not (FRONTEND_DIR / "app.py").exists():
-        log.error(f"frontend/app.py not found at: {FRONTEND_DIR / 'app.py'}")
-        sys.exit(1)
-
-    # Streamlit version for log
-    try:
-        ver = subprocess.run(
-            [str(VENV_PYTHON), "-m", "streamlit", "--version"],
-            capture_output=True, text=True, timeout=10,
-        )
-        log.info(f"  Streamlit        : {ver.stdout.strip()}")
-    except Exception as exc:
-        log.warning(f"  Streamlit version check failed: {exc}")
-
     # ── Step 1: Kill orphans ──
     log.info("")
-    log.info("Step 1 — Cleaning up orphaned processes on ports...")
+    log.info("Step 1 — Cleaning up orphaned processes on backend port...")
     kill_port(BACKEND_PORT)
-    kill_port(FRONTEND_PORT)
     time.sleep(1)  # Allow OS to release port bindings
 
     # ── Step 2: Start Backend ──
@@ -207,69 +171,37 @@ def main():
         sys.exit(1)
     log.info(f"  [OK] Backend ready in {time.time() - t0:.1f}s")
 
-    # ── Step 4: Start Frontend ──
-    log.info("")
-    log.info("Step 4 — Starting Streamlit Frontend...")
-    frontend_proc = subprocess.Popen(
-        [
-            str(VENV_PYTHON), "-m", "streamlit", "run", "app.py",
-            "--server.address", FRONTEND_HOST,
-            "--server.port", str(FRONTEND_PORT),
-            "--server.headless", "true",
-        ],
-        cwd=str(FRONTEND_DIR),
-        env=os.environ.copy(),
-    )
-    log.info(f"  Frontend PID: {frontend_proc.pid}")
-
-    # ── Step 5: Wait for frontend HTTP health ──
-    frontend_url = f"http://{FRONTEND_HOST}:{FRONTEND_PORT}"
-    log.info(f"  Waiting for frontend at {frontend_url} (up to {HEALTH_TIMEOUT}s) ")
-    t0 = time.time()
-    if not wait_for_http(frontend_url):
-        log.error(f"\nFrontend did not respond within {HEALTH_TIMEOUT}s. Aborting.")
-        backend_proc.terminate()
-        frontend_proc.terminate()
-        sys.exit(1)
-    log.info(f"  [OK] Frontend ready in {time.time() - t0:.1f}s")
-
-    # ── Step 6: Open browser ──
-    log.info("")
-    log.info(f"Step 6 — Opening browser at {frontend_url}")
-    try:
-        import webbrowser
-        webbrowser.open(frontend_url)
-    except Exception as exc:
-        log.warning(f"  Could not open browser automatically: {exc}")
-        log.info(f"  Please open manually: {frontend_url}")
-
     log.info("")
     log.info("=" * 60)
-    log.info("  [READY] Application is running!")
-    log.info(f"  Backend  : http://{BACKEND_HOST}:{BACKEND_PORT}")
-    log.info(f"  Frontend : {frontend_url}")
-    log.info("  Press Ctrl+C to stop BOTH servers.")
+    log.info("  [READY] Backend is running!")
+    log.info(f"  Backend API : http://{BACKEND_HOST}:{BACKEND_PORT}")
     log.info("=" * 60)
+    log.info("  👉 TO START THE FRONTEND:")
+    log.info("     Open a new terminal, and run:")
+    log.info("     cd frontend")
+    log.info("     npm install")
+    log.info("     npm run dev")
+    log.info("=" * 60)
+    log.info("  Press Ctrl+C to stop the backend server.")
 
-    # ── Step 7: Monitor & graceful shutdown ──
+    # ── Step 4: Monitor & graceful shutdown ──
     def shutdown(signum=None, frame=None):
-        log.info("\nShutdown requested — stopping servers...")
-        for proc, name in [(frontend_proc, "Frontend"), (backend_proc, "Backend")]:
-            proc.terminate()
-            try:
-                proc.wait(timeout=5)
-                log.info(f"  {name} stopped.")
-            except subprocess.TimeoutExpired:
-                proc.kill()
-                log.info(f"  {name} force-killed.")
-        log.info("Both servers stopped. Goodbye!")
+        log.info("\nShutdown requested — stopping backend...")
+        backend_proc.terminate()
+        try:
+            backend_proc.wait(timeout=5)
+            log.info("  Backend stopped.")
+        except subprocess.TimeoutExpired:
+            backend_proc.kill()
+            log.info("  Backend force-killed.")
+        log.info("Goodbye!")
         sys.exit(0)
 
     signal.signal(signal.SIGINT, shutdown)
     if hasattr(signal, "SIGTERM"):
         signal.signal(signal.SIGTERM, shutdown)
 
-    # Keep alive; exit if either child crashes unexpectedly
+    # Keep alive; exit if child crashes unexpectedly
     while True:
         time.sleep(2)
         ret = backend_proc.poll()
@@ -279,14 +211,6 @@ def main():
             else:
                 log.error(f"Backend crashed unexpectedly (exit code {ret})!")
             shutdown()
-        ret = frontend_proc.poll()
-        if ret is not None:
-            if ret in (-1, 1, -2, -15):
-                log.info("Frontend stopped (user exit).")
-            else:
-                log.error(f"Frontend crashed unexpectedly (exit code {ret})!")
-            shutdown()
-
 
 if __name__ == "__main__":
     main()

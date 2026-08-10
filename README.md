@@ -1,4 +1,4 @@
-# Vinaval AI — Learning Arena
+# Vinaval AI — Learning Arena (React Version)
 
 Welcome to **Vinaval AI**! This is a smart, AI-powered learning platform designed for students preparing for competitive exams like NEET and TNPSC in Tamil Nadu. It offers a bilingual (English and Tamil) AI tutor, custom flashcards, and practice quizzes based on official syllabus books and your own uploaded notes.
 
@@ -18,7 +18,7 @@ Think of this app as having two main pieces working together: a **Frontend** (wh
 
 ## 📂 File Architecture
 
-The project is structured to strictly separate the FastAPI backend from the Streamlit frontend.
+The project is structured to strictly separate the FastAPI backend from the React frontend.
 
 ```text
 vinavalai/
@@ -34,15 +34,14 @@ vinavalai/
 │   │   └── services/         # Core business logic
 │   ├── main.py               # FastAPI application entry point
 │   └── requirements.txt      # Backend Python dependencies
-├── frontend/                 # Streamlit Web Application
-│   ├── pages/                # Multi-page routing (Dashboard, Space, etc.)
-│   ├── utils/                # API helpers and reusable UI components
-│   ├── app.py                # Streamlit entry point (Login)
-│   └── requirements.txt      # Frontend Python dependencies
-├── tests/                    # End-to-End and Integration Tests
+├── frontend/                 # React Web Application (Vite)
+│   ├── src/                  # React components, pages, and services
+│   ├── public/               # Static assets
+│   ├── package.json          # Node dependencies
+│   └── vite.config.js        # Vite configuration
 ├── docker-compose.yml        # Docker configuration for isolated deployments
-├── start.bat                 # Windows quick-start launcher
-└── start.sh                  # MacOS/Linux quick-start launcher
+├── start.bat                 # Windows quick-start launcher (Backend)
+└── start.sh                  # MacOS/Linux quick-start launcher (Backend)
 ```
 
 ---
@@ -51,7 +50,7 @@ vinavalai/
 
 We keep things modern, fast, and lightweight:
 
-*   **Frontend:** Built with **Streamlit** (Python) for rapid, data-centric AI application UI.
+*   **Frontend:** Built with **React and Vite** for a highly responsive, component-driven, single-page application experience.
 *   **Backend:** Built with **FastAPI** (Python) for asynchronous, high-performance API handling.
 *   **Relational Database:** **SQLite** (`vinavalai.db`) stores user accounts, chat history, quiz attempts, and flashcards. 
 *   **Vector Database:** **ChromaDB**. Stores document embeddings using `paraphrase-multilingual-MiniLM-L12-v2` so it understands both English and Tamil natively.
@@ -61,12 +60,10 @@ We keep things modern, fast, and lightweight:
 
 ## 🚀 How to Run the App
 
-The absolute easiest way to run the app is using the provided start scripts. You don't need Docker for everyday local development!
-
-### Option 1: One-Click Start (Windows/Mac/Linux)
+### Step 1: Start the Backend
 
 **If you are on Windows:**
-Just double-click the `start.bat` file in the main folder! It will automatically start both the backend and the frontend in separate windows.
+Just double-click the `start.bat` file in the main folder! It will automatically start the FastAPI backend.
 
 **If you are on Mac/Linux:**
 Run the shell script in your terminal:
@@ -74,19 +71,29 @@ Run the shell script in your terminal:
 ./start.sh
 ```
 
-### Option 2: Run Using Docker
-If you want to run the app in a completely isolated environment (like if you are deploying to a server), you can use Docker.
+### Step 2: Start the React Frontend
 
+Open a **second terminal window**, navigate to the `frontend` directory, and start the Vite development server:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+### Option 2: Run Using Docker (Backend Only)
+Currently, only the backend is containerized in docker-compose.
 ```bash
 docker-compose up --build
 ```
+Then run the frontend manually via `npm run dev`.
 
 ---
 
 ## 🌐 Where to view the app
 
-Once started, open your web browser and go to:
-*   **The App (Streamlit Frontend):** `http://localhost:8501`
+Once both servers are started, open your web browser and go to:
+*   **The App (React Frontend):** `http://localhost:5173` (or the port Vite provides)
 *   *(The Backend runs silently in the background at `http://localhost:8000`)*
 
 ---
@@ -100,7 +107,7 @@ Make sure you have your API keys set up before running!
 *   *(Make sure `firebase-service-account.json` is also in the backend folder!)*
 
 **In `frontend/.env`:**
-*   `API_URL` - Set to `http://localhost:8000/api/v1`
+*   `VITE_API_URL` - Set to `http://127.0.0.1:8000/api/v1`
 
 ---
 

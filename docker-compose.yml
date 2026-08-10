@@ -16,19 +16,5 @@ services:
       - ./books:/app/books
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    container_name: vinavalai_frontend
-    ports:
-      - "8501:8501"
-    env_file:
-      - ./frontend/.env
-    volumes:
-      - ./frontend:/app
-    depends_on:
-      - backend
-
 volumes:
   chroma_data:

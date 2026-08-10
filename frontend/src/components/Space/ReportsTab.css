@@ -1,0 +1,143 @@
+.reports-container {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+.reports-header h2 {
+  font-size: 1.6rem;
+  margin-bottom: 0.25rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.reports-header p {
+  color: var(--text-secondary);
+}
+
+.metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1.5rem;
+}
+
+.metric-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: 1.5rem;
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 0.75rem;
+  transition: transform var(--transition-fast);
+}
+
+.metric-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+.metric-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: rgba(31, 95, 91, 0.1);
+  color: var(--academic-green);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 0.5rem;
+}
+
+.metric-val {
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1;
+}
+
+.metric-lbl {
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+  font-weight: 500;
+}
+
+/* Accuracy Bar */
+.accuracy-section {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: 2rem;
+  box-shadow: var(--shadow-sm);
+}
+
+.accuracy-section h3 {
+  margin-bottom: 1.5rem;
+  font-size: 1.2rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.acc-bar-container {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.acc-bar-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.acc-label-row {
+  display: flex;
+  justify-content: space-between;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.acc-progress-bg {
+  width: 100%;
+  height: 12px;
+  background: var(--bg-secondary);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.acc-progress-fill {
+  height: 100%;
+  background: var(--academic-green);
+  border-radius: 6px;
+  transition: width 1s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.acc-progress-fill.mock {
+  background: var(--warning); /* highlight mock exams diff */
+}
+
+/* Info Alert */
+.info-alert {
+  display: flex;
+  gap: 1rem;
+  background: rgba(59, 130, 246, 0.05);
+  border: 1px solid rgba(59, 130, 246, 0.2);
+  padding: 1.5rem;
+  border-radius: var(--radius-lg);
+}
+
+.info-alert svg {
+  color: #3b82f6;
+  flex-shrink: 0;
+}
+
+.info-alert p {
+  margin: 0;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
