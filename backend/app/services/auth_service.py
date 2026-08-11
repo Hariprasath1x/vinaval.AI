@@ -2,9 +2,9 @@ import bcrypt
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.firebase import verify_firebase_token
-from app.core.security import create_access_token
+from app.core.security import create_access_token, create_refresh_token, decode_access_token
 from app.repositories.user_repository import UserRepository
-from app.schemas.auth import UserCreate, TokenResponse, UserResponse, SignupRequest, LoginRequest
+from app.schemas.auth import UserCreate, TokenResponse, UserResponse, SignupRequest, LoginRequest, RefreshTokenRequest
 
 
 def _hash_password(plain: str) -> str:
@@ -44,10 +44,13 @@ class AuthService:
                 await self.db.commit()
                 await self.db.refresh(existing)
                 access_token = create_access_token(data={"sub": str(existing.id)})
+                refresh_token = create_refresh_token(data={"sub": str(existing.id)})
                 return TokenResponse(
                     access_token=access_token,
+                    refresh_token=refresh_token,
                     user=UserResponse.model_validate(existing),
                 )
+
             raise ValueError("An account with this email already exists. Please log in.")
 
         hashed = _hash_password(req.password)
@@ -59,8 +62,10 @@ class AuthService:
             )
         )
         access_token = create_access_token(data={"sub": str(user.id)})
+        refresh_token = create_refresh_token(data={"sub": str(user.id)})
         return TokenResponse(
             access_token=access_token,
+            refresh_token=refresh_token,
             user=UserResponse.model_validate(user),
         )
 
@@ -90,8 +95,10 @@ class AuthService:
             raise ValueError("Incorrect password. Please try again.")
 
         access_token = create_access_token(data={"sub": str(user.id)})
+        refresh_token = create_refresh_token(data={"sub": str(user.id)})
         return TokenResponse(
             access_token=access_token,
+            refresh_token=refresh_token,
             user=UserResponse.model_validate(user),
         )
 
@@ -123,8 +130,34 @@ class AuthService:
                 )
 
         access_token = create_access_token(data={"sub": str(user.id)})
+        refresh_token = create_refresh_token(data={"sub": str(user.id)})
         return TokenResponse(
             access_token=access_token,
+            refresh_token=refresh_token,
+            user=UserResponse.model_validate(user),
+        )
+
+    # ── Refresh Token ─────────────────────────────────────────────────────────
+
+    async def refresh_token(self, req: RefreshTokenRequest) -> TokenResponse:
+        """Exchange a valid refresh token for a new access token and refresh token."""
+        payload = decode_access_token(req.refresh_token)
+        if not payload or payload.get("type") != "refresh":
+            raise ValueError("Invalid or expired refresh token.")
+            
+        user_id = payload.get("sub")
+        if not user_id:
+            raise ValueError("Invalid token payload.")
+            
+        user = await self.repo.get_by_id(int(user_id))
+        if not user:
+            raise ValueError("User not found.")
+            
+        access_token = create_access_token(data={"sub": str(user.id)})
+        refresh_token = create_refresh_token(data={"sub": str(user.id)})
+        return TokenResponse(
+            access_token=access_token,
+            refresh_token=refresh_token,
             user=UserResponse.model_validate(user),
         )
 

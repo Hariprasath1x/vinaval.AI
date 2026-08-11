@@ -2,7 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
-import { Book, Target, TrendingUp, RefreshCw, Plus, Trash2, ArrowRight, Library } from 'lucide-react';
+import { Book, Target, TrendingUp, RefreshCw, Plus, Trash2, ArrowRight, Library, FileText, User, LogOut, LayoutDashboard } from 'lucide-react';
+import Sidebar from '../components/Sidebar';
 import './Dashboard.css';
 
 const EXAM_ICONS = { "NEET": "🩺", "TNPSC": "🏛️" };
@@ -24,29 +25,29 @@ export default function Dashboard() {
     try {
       const spacesData = await api.get('/spaces');
       setSpaces(spacesData || []);
-      
-      // Fetch all stats in parallel instead of sequential N+1 calls
-      const statsResults = await Promise.all(
-        (spacesData || []).map(sp =>
-          api.get(`/spaces/${sp.id}/quiz/stats`).catch(() => null)
-        )
-      );
-
-      let totalQ = 0;
-      let totalC = 0;
-      let bestAcc = 0;
-      let bestSubj = null;
-
-      statsResults.forEach((st, idx) => {
-        if (st && st.total_all > 0) {
-          totalQ += st.total_all;
-          totalC += st.correct_all;
-          if (st.accuracy_all > bestAcc) {
-            bestAcc = st.accuracy_all;
-            bestSubj = spacesData[idx].subject;
-          }
+            // Use the new batch stats endpoint for efficiency (replaces N+1 calls)
+        let batchStats = {};
+        if (spacesData && spacesData.length > 0) {
+          const queryParams = spacesData.map(sp => `space_ids=${sp.id}`).join('&');
+          batchStats = await api.get(`/spaces/quiz/stats/batch?${queryParams}`).catch(() => ({}));
         }
-      });
+
+        let totalQ = 0;
+        let totalC = 0;
+        let bestAcc = 0;
+        let bestSubj = null;
+
+        spacesData.forEach((sp) => {
+          const st = batchStats[sp.id];
+          if (st && st.total_all > 0) {
+            totalQ += st.total_all;
+            totalC += st.correct_all;
+            if (st.accuracy_all > bestAcc) {
+              bestAcc = st.accuracy_all;
+              bestSubj = sp.subject;
+            }
+          }
+        });
       
       const overallAcc = totalQ > 0 ? (totalC / totalQ) * 100 : 0;
       setStats({
@@ -78,22 +79,22 @@ export default function Dashboard() {
   };
 
   return (
-    <div className="dashboard-container animate-fade-in">
-      <header className="dashboard-header">
-        <div className="welcome-msg">
-          <h1>👋 Welcome back, {user?.name || 'Student'}!</h1>
-          <p>Ready to continue your learning journey?</p>
-        </div>
-        <div className="action-bar">
-          <button className="btn-secondary" onClick={loadData} disabled={loading}>
-            <RefreshCw size={16} className={loading ? 'animate-pulse' : ''} />
-            Refresh
-          </button>
-          <button className="btn-secondary" onClick={logout}>
-            Logout
-          </button>
-        </div>
-      </header>
+    <div className="dashboard-layout">
+      <Sidebar />
+
+      <main className="dashboard-main animate-fade-in">
+        <header className="dashboard-header">
+          <div className="welcome-msg">
+            <h1>👋 Welcome back, {user?.name || 'Student'}!</h1>
+            <p>Ready to continue your learning journey?</p>
+          </div>
+          <div className="action-bar">
+            <button className="btn-secondary" onClick={loadData} disabled={loading}>
+              <RefreshCw size={16} className={loading ? 'animate-pulse' : ''} />
+              Refresh
+            </button>
+          </div>
+        </header>
 
       {/* Stats Row */}
       <div className="stats-grid">
@@ -178,6 +179,7 @@ export default function Dashboard() {
           </div>
         )}
       </section>
+      </main>
     </div>
   );
 }

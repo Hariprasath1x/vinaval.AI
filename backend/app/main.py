@@ -1,9 +1,13 @@
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from app.core.config import get_settings
 from app.core.firebase import init_firebase
 from app.api.v1 import router as api_v1_router
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from app.core.rate_limit import limiter
 
 
 settings = get_settings()
@@ -87,7 +91,7 @@ _GOOGLE_POPUP_HTML = f"""<!DOCTYPE html>
     provider.addScope('profile');
 
     const params    = new URLSearchParams(window.location.search);
-    const returnUrl = params.get('return_url') || 'http://localhost:8501';
+    const returnUrl = params.get('return_url') || '{settings.FRONTEND_URL}';
 
     const statusEl  = document.getElementById('status');
     const spinnerEl = document.getElementById('spinner');
@@ -127,6 +131,13 @@ _GOOGLE_POPUP_HTML = f"""<!DOCTYPE html>
 </html>"""
 
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Application lifespan: initialise Firebase on startup."""
+    init_firebase()
+    yield
+
+
 def create_app() -> FastAPI:
     app = FastAPI(
         title="VinavalAI API",
@@ -134,7 +145,11 @@ def create_app() -> FastAPI:
         version="1.0.0",
         docs_url="/docs",
         redoc_url="/redoc",
+        lifespan=lifespan,
     )
+    
+    app.state.limiter = limiter
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
     # CORS — allow the Vite dev server, Streamlit dev server, and production frontend
     app.add_middleware(
@@ -160,11 +175,6 @@ def create_app() -> FastAPI:
         response = await call_next(request)
         response.headers["Cross-Origin-Opener-Policy"] = "same-origin-allow-popups"
         return response
-
-    # Initialize Firebase Admin SDK at startup
-    @app.on_event("startup")
-    async def startup():
-        init_firebase()
 
     # Register all API routes
     app.include_router(api_v1_router)

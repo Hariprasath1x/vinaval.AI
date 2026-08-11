@@ -1,6 +1,11 @@
+import sys
+import os
 from logging.config import fileConfig
 from sqlalchemy import engine_from_config, pool
 from alembic import context
+
+# Add backend directory to Python path so IDEs and Alembic can resolve 'app'
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Import all models so Alembic can detect them
 from app.models import *  # noqa

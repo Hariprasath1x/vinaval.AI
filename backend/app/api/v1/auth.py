@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
-import requests
+import httpx
 
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
@@ -13,6 +13,7 @@ from app.schemas.auth import (
     LoginRequest,
     ProfileUpdateRequest,
     ChangePasswordRequest,
+    RefreshTokenRequest,
 )
 from app.models.user import User
 
@@ -21,6 +22,24 @@ router = APIRouter(prefix="/auth", tags=["Authentication"])
 _FIREBASE_API_KEY = "AIzaSyClUultgV7XpYjT1teKAbtchNGpRfqr04A"
 
 
+@router.post("/refresh", response_model=TokenResponse)
+async def refresh_token(
+    body: RefreshTokenRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Exchange a valid refresh token for a new access token.
+    """
+    try:
+        service = AuthService(db)
+        return await service.refresh_token(body)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Token refresh failed: {exc}",
+        )
 
 
 # ── Sign Up ───────────────────────────────────────────────────────────────────
@@ -70,8 +89,6 @@ async def login(
 
 
 # ── Firebase (Google Sign-In) ─────────────────────────────────────────────────
-
-from pydantic import BaseModel
 
 class FirebaseLoginRequest(BaseModel):
     id_token: str
@@ -160,7 +177,8 @@ async def forgot_password(body: ForgotPasswordRequest):
     payload = {"requestType": "PASSWORD_RESET", "email": body.email}
 
     try:
-        resp = requests.post(url, json=payload, timeout=10.0)
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(url, json=payload)
         data = resp.json()
 
         if resp.status_code == 200:
@@ -183,7 +201,7 @@ async def forgot_password(body: ForgotPasswordRequest):
             detail=f"Could not send reset email: {error_code}",
         )
 
-    except requests.exceptions.RequestException as exc:
+    except httpx.RequestError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=f"Could not reach Firebase: {exc}",

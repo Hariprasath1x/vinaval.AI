@@ -5,6 +5,8 @@ import Auth from './pages/Auth';
 import Dashboard from './pages/Dashboard';
 import SelectExam from './pages/SelectExam';
 import Space from './pages/Space';
+import Profile from './pages/Profile';
+import MockTests from './pages/MockTests';
 
 const ProtectedRoute = ({ children }) => {
   const { user } = useAuth();
@@ -34,6 +36,14 @@ function AppRoutes() {
       <Route 
         path="/space/:spaceId" 
         element={<ProtectedRoute><Space /></ProtectedRoute>} 
+      />
+      <Route 
+        path="/profile" 
+        element={<ProtectedRoute><Profile /></ProtectedRoute>} 
+      />
+      <Route 
+        path="/mock-tests" 
+        element={<ProtectedRoute><MockTests /></ProtectedRoute>} 
       />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

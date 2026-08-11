@@ -1,5 +1,6 @@
 from pydantic_settings import BaseSettings
 from functools import lru_cache
+from typing import Optional
 
 
 class Settings(BaseSettings):
@@ -21,6 +22,10 @@ class Settings(BaseSettings):
     # Groq
     GROQ_API_KEY: str
     GROQ_MODEL: str = "llama-3.3-70b-versatile"
+
+    # Gemini
+    GEMINI_API_KEY: Optional[str] = None
+    GEMINI_MODEL: str = "gemini-1.5-flash"
 
     # ChromaDB
     CHROMA_PERSIST_DIR: str = "./chroma_data"

@@ -33,7 +33,10 @@ class PerformanceAnalyzer:
         answered_question_ids = set()
         for attempt in attempts:
             answered_question_ids.add(attempt.question_id)
-            q = questions_by_id[attempt.question_id]
+            q = questions_by_id.get(attempt.question_id)
+            if q is None:
+                # Question was deleted after attempt was recorded — skip safely
+                continue
             topic_stats[q.topic]["attempts"].append(attempt)
             
             if attempt.user_answer is None or attempt.user_answer == "" or attempt.user_answer == "null":

@@ -1,6 +1,7 @@
-from typing import List, Optional
-from fastapi import APIRouter, Depends, Query, status
+from typing import List, Optional, Dict
+from fastapi import APIRouter, Depends, Query, status, Request
 from sqlalchemy.ext.asyncio import AsyncSession
+from app.core.rate_limit import limiter
 
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
@@ -23,8 +24,35 @@ from app.schemas.performance_analysis import PerformanceAnalysisOut
 router = APIRouter(prefix="/spaces", tags=["Quiz"])
 
 
+# ── Global endpoints (no {space_id}) MUST come FIRST to avoid path collision ──
+
+@router.get("/quiz/stats/batch", response_model=Dict[int, SpaceStats])
+async def get_batch_quiz_stats(
+    space_ids: List[int] = Query(...),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get the aggregate stats for multiple spaces in a single call."""
+    quiz_svc = QuizService(db)
+    return await quiz_svc.get_batch_stats(space_ids)
+
+
+@router.get("/quiz/global-history", response_model=List[QuizSessionOut])
+async def get_global_quiz_history(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get the history of quiz sessions across all spaces for the user."""
+    quiz_svc = QuizService(db)
+    return await quiz_svc.get_global_history(current_user.id)
+
+
+# ── Per-space endpoints ──────────────────────────────────────────────────────
+
 @router.post("/{space_id}/quiz/generate", response_model=GenerateQuestionsResponse, status_code=status.HTTP_201_CREATED)
+@limiter.limit("5/minute")
 async def generate_questions(
+    request: Request,
     space_id: int,
     body: GenerateQuestionsRequest,
     current_user: User = Depends(get_current_user),

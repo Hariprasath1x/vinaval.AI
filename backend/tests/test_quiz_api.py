@@ -104,7 +104,7 @@ class TestGenerateQuestions:
         with (
             _patch_space_service(mock_space),
             patch("app.rag.chain.AsyncGroq") as mock_groq_cls,
-            patch("app.rag.chain._retrieve_context", return_value=("", 0)),
+            patch("app.rag.chain._retrieve_syllabus_context", return_value=("", 0)),
         ):
             mock_client = AsyncMock()
             mock_client.chat.completions.create = AsyncMock(return_value=groq_response)
@@ -117,10 +117,12 @@ class TestGenerateQuestions:
 
         assert response.status_code == 201
         data = response.json()
-        assert isinstance(data, list)
-        assert len(data) == 2
-        assert data[0]["topic"] == "Newton's Laws"
-        assert data[0]["correct_option"] == "a"
+        assert isinstance(data, dict)
+        assert "questions" in data
+        questions = data["questions"]
+        assert len(questions) == 2
+        assert questions[0]["topic"] == "Newton's Laws"
+        assert questions[0]["correct_option"] == "a"
 
     async def test_generate_mock_exam_success(
         self, client: AsyncClient, mock_space
@@ -131,7 +133,7 @@ class TestGenerateQuestions:
         with (
             _patch_space_service(mock_space),
             patch("app.rag.chain.AsyncGroq") as mock_groq_cls,
-            patch("app.rag.chain._retrieve_context", return_value=("", 0)),
+            patch("app.rag.chain._retrieve_syllabus_context", return_value=("", 0)),
         ):
             mock_client = AsyncMock()
             mock_client.chat.completions.create = AsyncMock(return_value=groq_response)
@@ -144,10 +146,12 @@ class TestGenerateQuestions:
 
         assert response.status_code == 201
         data = response.json()
-        assert isinstance(data, list)
-        assert len(data) == 2
+        assert isinstance(data, dict)
+        assert "questions" in data
+        questions = data["questions"]
+        assert len(questions) == 2
         # Mock exam questions should have different topics
-        topics = {q["topic"] for q in data}
+        topics = {q["topic"] for q in questions}
         assert len(topics) == 2, "Mock exam should span multiple topics"
 
     async def test_generate_questions_invalid_json_from_llm(
@@ -159,7 +163,7 @@ class TestGenerateQuestions:
         with (
             _patch_space_service(mock_space),
             patch("app.rag.chain.AsyncGroq") as mock_groq_cls,
-            patch("app.rag.chain._retrieve_context", return_value=("", 0)),
+            patch("app.rag.chain._retrieve_syllabus_context", return_value=("", 0)),
         ):
             mock_client = AsyncMock()
             mock_client.chat.completions.create = AsyncMock(return_value=groq_response)
@@ -182,7 +186,7 @@ class TestGenerateQuestions:
         with (
             _patch_space_service(mock_space),
             patch("app.rag.chain.AsyncGroq") as mock_groq_cls,
-            patch("app.rag.chain._retrieve_context", return_value=("", 0)),
+            patch("app.rag.chain._retrieve_syllabus_context", return_value=("", 0)),
         ):
             mock_client = AsyncMock()
             mock_client.chat.completions.create = AsyncMock(return_value=groq_response)

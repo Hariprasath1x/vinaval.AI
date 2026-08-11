@@ -42,6 +42,7 @@ import time
 from typing import AsyncGenerator, List, Dict, Tuple, Optional
 
 from groq import AsyncGroq
+import google.generativeai as genai
 from app.core.config import get_settings
 
 logger = logging.getLogger(__name__)
@@ -532,14 +533,50 @@ async def stream_chat(
 
     system_prompt = _build_system_prompt(exam, subject, context_block, forced_lang, filename)
 
+    # Truncate history to prevent exceeding token limits
+    # Keep only the last 6 messages (3 turns)
+    recent_history = history[-6:] if history else []
+
+    # Use higher token budget for full-doc operations, but keep it safe for 12k TPM limits
+    max_tokens = 3000 if intent in ("EXPLAIN_DOCUMENT", "SUMMARIZE_DOCUMENT",
+                                     "GENERATE_NOTES") else 1500
+
+    # 1. Try Gemini API first
+    if settings.GEMINI_API_KEY:
+        try:
+            genai.configure(api_key=settings.GEMINI_API_KEY)
+            model = genai.GenerativeModel(settings.GEMINI_MODEL, system_instruction=system_prompt)
+            
+            gemini_history = []
+            for msg in recent_history:
+                # Map roles: 'assistant' -> 'model', 'user' -> 'user'
+                role = "model" if msg["role"] == "assistant" else "user"
+                gemini_history.append({"role": role, "parts": [msg["content"]]})
+                
+            gemini_history.append({"role": "user", "parts": [user_message]})
+            
+            stream = await model.generate_content_async(
+                contents=gemini_history,
+                stream=True,
+                generation_config=genai.types.GenerationConfig(
+                    max_output_tokens=max_tokens,
+                    temperature=0.7,
+                )
+            )
+            
+            async for chunk in stream:
+                if chunk.text:
+                    yield chunk.text
+            return  # Successfully streamed from Gemini, exit function
+            
+        except Exception as e:
+            logger.warning("Gemini API failed (%s), falling back to Groq...", e)
+            
+    # 2. Fallback to Groq API
     client = AsyncGroq(api_key=settings.GROQ_API_KEY)
     messages = [{"role": "system", "content": system_prompt}]
-    messages.extend(history)
+    messages.extend(recent_history)
     messages.append({"role": "user", "content": user_message})
-
-    # Use higher token budget for full-doc operations
-    max_tokens = 4096 if intent in ("EXPLAIN_DOCUMENT", "SUMMARIZE_DOCUMENT",
-                                     "GENERATE_NOTES") else 3000
 
     stream = await client.chat.completions.create(
         model=settings.GROQ_MODEL,

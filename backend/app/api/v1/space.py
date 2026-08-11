@@ -1,9 +1,10 @@
 import json
-from typing import List
-from fastapi import APIRouter, Depends, status
+from typing import List, Optional
+from fastapi import APIRouter, Depends, status, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.rate_limit import limiter
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
 from app.models.user import User
@@ -16,6 +17,9 @@ from app.schemas.space import (
     MessageOut,
     NoteOut,
     NoteUpdate,
+    ChatSessionCreate,
+    ChatSessionRename,
+    ChatSessionOut,
 )
 
 router = APIRouter(prefix="/spaces", tags=["Learning Spaces"])
@@ -69,10 +73,67 @@ async def delete_space(
     service = SpaceService(db)
     await service.delete_space(space_id, current_user.id)
 
+
+# ── Chat Sessions ────────────────────────────────────────────────────────────────
+
+@router.get("/{space_id}/chat-sessions", response_model=List[ChatSessionOut])
+async def list_chat_sessions(
+    space_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """List all named chat conversations for this Learning Space."""
+    service = SpaceService(db)
+    await service.get_space(space_id, current_user.id)  # ownership check
+    return await service.list_chat_sessions(space_id)
+
+
+@router.post("/{space_id}/chat-sessions", response_model=ChatSessionOut, status_code=status.HTTP_201_CREATED)
+async def create_chat_session(
+    space_id: int,
+    body: ChatSessionCreate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Create a new named chat session within this Learning Space."""
+    service = SpaceService(db)
+    await service.get_space(space_id, current_user.id)  # ownership check
+    return await service.create_chat_session(space_id, body.name)
+
+
+@router.put("/{space_id}/chat-sessions/{session_id}", response_model=ChatSessionOut)
+async def rename_chat_session(
+    space_id: int,
+    session_id: int,
+    body: ChatSessionRename,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Rename a chat session (user's manual name takes priority over AI suggestion)."""
+    service = SpaceService(db)
+    await service.get_space(space_id, current_user.id)  # ownership check
+    return await service.rename_chat_session(session_id, space_id, body.name)
+
+
+@router.delete("/{space_id}/chat-sessions/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_chat_session(
+    space_id: int,
+    session_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete a chat session and all its messages."""
+    service = SpaceService(db)
+    await service.get_space(space_id, current_user.id)  # ownership check
+    await service.delete_chat_session(session_id, space_id)
+
+
 # ── Chat ────────────────────────────────────────────────────────────────────────
 
 @router.post("/{space_id}/chat")
+@limiter.limit("5/minute")
 async def chat(
+    request: Request,
     space_id: int,
     body: MessageCreate,
     current_user: User = Depends(get_current_user),
@@ -80,6 +141,7 @@ async def chat(
 ):
     """
     Send a user message and stream the AI response via Server-Sent Events.
+    Pass chat_session_id to scope the conversation to a specific named session.
 
     SSE format:
         data: <json-encoded chunk>\\n\\n
@@ -96,6 +158,7 @@ async def chat(
                 body.lang,
                 active_doc_id=body.active_doc_id,
                 active_doc_filename=body.active_doc_filename,
+                chat_session_id=body.chat_session_id,
             ):
                 yield f"data: {json.dumps(chunk)}\n\n"
         except Exception as exc:
@@ -108,7 +171,7 @@ async def chat(
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no",    # disable nginx buffering if used
+            "X-Accel-Buffering": "no",
         },
     )
 
@@ -116,14 +179,14 @@ async def chat(
 @router.get("/{space_id}/messages", response_model=List[MessageOut])
 async def get_messages(
     space_id: int,
+    session_id: Optional[int] = None,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Return the full chat history for a Learning Space."""
+    """Return chat history. Pass ?session_id=X to scope to a specific chat session."""
     service = SpaceService(db)
-    # Ensure space belongs to user
     await service.get_space(space_id, current_user.id)
-    return await service.get_messages(space_id)
+    return await service.get_messages(space_id, session_id=session_id)
 
 
 # ── Notes ───────────────────────────────────────────────────────────────────────

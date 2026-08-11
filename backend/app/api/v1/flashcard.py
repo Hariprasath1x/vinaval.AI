@@ -1,6 +1,7 @@
 from typing import List, Optional
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, status, Request
 from sqlalchemy.ext.asyncio import AsyncSession
+from app.core.rate_limit import limiter
 
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
@@ -20,7 +21,9 @@ router = APIRouter(prefix="/spaces", tags=["Flashcards"])
     response_model=List[FlashcardOut],
     status_code=status.HTTP_201_CREATED,
 )
+@limiter.limit("5/minute")
 async def generate_flashcards(
+    request: Request,
     space_id: int,
     body: GenerateFlashcardsRequest,
     current_user: User = Depends(get_current_user),

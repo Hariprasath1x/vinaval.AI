@@ -25,7 +25,7 @@ export default function Space() {
   const location = useLocation();
   
   const [space, setSpace] = useState(location.state?.space || null);
-  const [activeTab, setActiveTab] = useState('learn');
+  const [activeTab, setActiveTab] = useState(location.state?.activeTab || 'learn');
   const [loading, setLoading] = useState(!space);
 
   useEffect(() => {

@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.repositories.space_repository import SpaceRepository
 from app.core.constants import is_valid_subject, EXAM_MAP
 from app.models.space import LearningSpace
+from app.models.chat_session import ChatSession
 from app.models.message import ChatMessage
 from app.models.note import SpaceNote
 from app.schemas.space import SpaceCreate, NoteUpdate
@@ -61,16 +62,70 @@ class SpaceService:
             )
         return True
 
+    # ── Chat Sessions ──────────────────────────────────────────────────────────
+
+    async def create_chat_session(self, space_id: int, name: str = "New Chat") -> ChatSession:
+        return await self.repo.create_chat_session(space_id, name)
+
+    async def list_chat_sessions(self, space_id: int) -> List[ChatSession]:
+        return await self.repo.list_chat_sessions(space_id)
+
+    async def rename_chat_session(self, session_id: int, space_id: int, name: str) -> ChatSession:
+        session = await self.repo.rename_chat_session(session_id, space_id, name)
+        if not session:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chat session not found.")
+        return session
+
+    async def delete_chat_session(self, session_id: int, space_id: int) -> bool:
+        deleted = await self.repo.delete_chat_session(session_id, space_id)
+        if not deleted:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chat session not found.")
+        return True
+
+    async def suggest_session_name(
+        self, session_id: int, space: LearningSpace, first_user_msg: str, first_ai_response: str
+    ) -> str:
+        """Ask Groq to suggest a short 3-5 word title for this chat. Fire-and-forget friendly."""
+        from app.core.config import get_settings
+        from groq import AsyncGroq
+        settings = get_settings()
+        client = AsyncGroq(api_key=settings.GROQ_API_KEY)
+
+        prompt = (
+            f"Given this first exchange in a {space.exam_id} {space.subject} tutoring chat, "
+            f"suggest a short, descriptive title (3-5 words, no punctuation) that captures the main topic.\n\n"
+            f"User: {first_user_msg[:200]}\n"
+            f"AI: {first_ai_response[:300]}\n\n"
+            f"Title (3-5 words only):"
+        )
+
+        try:
+            resp = await client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=20,
+                temperature=0.3,
+            )
+            suggestion = resp.choices[0].message.content.strip()
+            # Clean up quotes or newlines
+            suggestion = suggestion.strip('"\'').split('\n')[0][:60]
+            await self.repo.set_ai_suggested_name(session_id, suggestion)
+            return suggestion
+        except Exception:
+            return ""
+
     # ── Chat ───────────────────────────────────────────────────────────────────
 
-    async def get_messages(self, space_id: int) -> List[ChatMessage]:
-        return await self.repo.get_messages(space_id)
+    async def get_messages(self, space_id: int, session_id: Optional[int] = None) -> List[ChatMessage]:
+        return await self.repo.get_messages(space_id, session_id=session_id)
 
-    async def save_user_message(self, space_id: int, content: str) -> ChatMessage:
-        return await self.repo.add_message(space_id, "user", content)
+    async def save_user_message(self, space_id: int, content: str,
+                                session_id: Optional[int] = None) -> ChatMessage:
+        return await self.repo.add_message(space_id, "user", content, session_id=session_id)
 
-    async def save_assistant_message(self, space_id: int, content: str) -> ChatMessage:
-        return await self.repo.add_message(space_id, "assistant", content)
+    async def save_assistant_message(self, space_id: int, content: str,
+                                     session_id: Optional[int] = None) -> ChatMessage:
+        return await self.repo.add_message(space_id, "assistant", content, session_id=session_id)
 
     async def stream_ai_response(
         self,
@@ -79,16 +134,19 @@ class SpaceService:
         forced_lang: Optional[str] = None,
         active_doc_id: Optional[int] = None,
         active_doc_filename: Optional[str] = None,
+        chat_session_id: Optional[int] = None,
     ):
         """
         Generator: yields SSE-formatted chunks, then saves both messages to DB.
+        Optionally scoped to a chat session. After first exchange, triggers AI name suggestion.
         """
-        # Build history (last 20 messages to stay within context window)
-        messages = await self.repo.get_messages(space.id)
+        # Build history for this session (last 20 messages for context window)
+        messages = await self.repo.get_messages(space.id, session_id=chat_session_id)
         history = [{"role": m.role, "content": m.content} for m in messages[-20:]]
+        is_first_exchange = len(history) == 0
 
-        # Save user message first
-        await self.repo.add_message(space.id, "user", user_message)
+        # Save user message
+        await self.repo.add_message(space.id, "user", user_message, session_id=chat_session_id)
 
         # Stream AI response
         full_response: list[str] = []
@@ -105,8 +163,17 @@ class SpaceService:
             full_response.append(chunk)
             yield chunk
 
+        full_text = "".join(full_response)
+
         # Persist the complete assistant message
-        await self.repo.add_message(space.id, "assistant", "".join(full_response))
+        await self.repo.add_message(space.id, "assistant", full_text, session_id=chat_session_id)
+
+        # After first exchange: generate AI name suggestion (non-blocking)
+        if is_first_exchange and chat_session_id:
+            try:
+                await self.suggest_session_name(chat_session_id, space, user_message, full_text)
+            except Exception:
+                pass  # Never let name suggestion crash the main flow
 
     # ── Notes ──────────────────────────────────────────────────────────────────
 

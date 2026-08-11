@@ -33,7 +33,7 @@ class GenerateQuestionsResponse(BaseModel):
 
 class SubmitAnswerRequest(BaseModel):
     question_id: int
-    user_answer: str            # "a", "b", "c", or "d"
+    user_answer: Optional[str] = None  # None means skipped (e.g. timer ran out)
     time_taken_seconds: Optional[int] = None
     is_exam: bool = False
     session_id: Optional[int] = None

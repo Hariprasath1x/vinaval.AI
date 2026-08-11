@@ -22,6 +22,27 @@ class SpaceOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+# ── Chat Sessions ──────────────────────────────────────────────────────────────
+
+class ChatSessionCreate(BaseModel):
+    name: str = "New Chat"
+
+
+class ChatSessionRename(BaseModel):
+    name: str
+
+
+class ChatSessionOut(BaseModel):
+    id: int
+    space_id: int
+    name: str
+    ai_suggested_name: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
 # ── Chat Messages ──────────────────────────────────────────────────────────────
 
 class MessageCreate(BaseModel):
@@ -29,11 +50,13 @@ class MessageCreate(BaseModel):
     lang: Optional[str] = "auto"
     active_doc_id: Optional[int] = None           # doc_id of the active uploaded file
     active_doc_filename: Optional[str] = None     # filename for display in system prompt
+    chat_session_id: Optional[int] = None         # scoped chat session
 
 
 class MessageOut(BaseModel):
     id: int
     space_id: int
+    session_id: Optional[int] = None
     role: str        # "user" or "assistant"
     content: str
     created_at: datetime

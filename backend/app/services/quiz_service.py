@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List, Optional, Dict
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -102,25 +102,30 @@ class QuizService:
                 detail="Question not found in this space.",
             )
 
-        user_answer = req.user_answer.lower()
-        if user_answer not in {"a", "b", "c", "d"}:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="user_answer must be 'a', 'b', 'c', or 'd'.",
-            )
+        # None means the question was skipped (e.g. timer expired)
+        user_answer = req.user_answer
+        is_skipped = user_answer is None
 
-        is_correct = user_answer == question.correct_option
+        if not is_skipped:
+            user_answer = user_answer.lower()
+            if user_answer not in {"a", "b", "c", "d"}:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail="user_answer must be 'a', 'b', 'c', or 'd', or null to skip.",
+                )
+
+        is_correct = (not is_skipped) and (user_answer == question.correct_option)
         await self.repo.save_attempt(
             space_id=space.id,
             question_id=question.id,
-            user_answer=user_answer,
+            user_answer=user_answer or "skip",  # store "skip" for None in DB
             is_correct=is_correct,
             time_taken_seconds=req.time_taken_seconds,
             is_exam=req.is_exam,
             session_id=req.session_id,
         )
 
-        if req.session_id:
+        if req.session_id and not is_skipped:
             session = await self.repo.get_session(req.session_id)
             if session:
                 if is_correct:
@@ -130,10 +135,10 @@ class QuizService:
 
         return AnswerResult(
             question_id=question.id,
-            user_answer=user_answer,
+            user_answer=user_answer or "skip",
             correct_option=question.correct_option,
             is_correct=is_correct,
-            explanation=question.explanation,
+            explanation=question.explanation if not is_skipped else None,
         )
 
     async def get_stats(self, space_id: int) -> SpaceStats:
@@ -160,8 +165,38 @@ class QuizService:
             topics_practiced=data["topics"],
         )
 
+    async def get_batch_stats(self, space_ids: List[int]) -> Dict[int, SpaceStats]:
+        batch_data = await self.repo.get_batch_stats(space_ids)
+        result = {}
+        
+        def pct(correct: int, total: int) -> float:
+            return round(correct / total * 100, 1) if total > 0 else 0.0
+            
+        for sid, data in batch_data.items():
+            p_total, p_correct = data["practice"]
+            e_total, e_correct = data["exam"]
+            all_total = p_total + e_total
+            all_correct = p_correct + e_correct
+            
+            result[sid] = SpaceStats(
+                total_practice=p_total,
+                correct_practice=p_correct,
+                accuracy_practice=pct(p_correct, p_total),
+                total_exam=e_total,
+                correct_exam=e_correct,
+                accuracy_exam=pct(e_correct, e_total),
+                total_all=all_total,
+                correct_all=all_correct,
+                accuracy_all=pct(all_correct, all_total),
+                topics_practiced=data["topics"],
+            )
+        return result
+
     async def get_history(self, space_id: int) -> list:
         return await self.repo.get_sessions_for_space(space_id)
+
+    async def get_global_history(self, user_id: int) -> list:
+        return await self.repo.get_global_sessions_for_user(user_id)
 
     async def generate_review(
         self, space: LearningSpace, req: QuizReviewRequest
@@ -184,7 +219,7 @@ class QuizService:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
             
         session.is_completed = True
-        session.user_id = user_id
+        session.user_id = str(user_id)  # store as str to match DB column type
         await self.repo.update_session(session)
         
         attempts = await self.repo.get_attempts_for_session(session_id)
@@ -211,7 +246,7 @@ class QuizService:
         analysis = PerformanceAnalysis(
             session_id=session.id,
             space_id=space.id,
-            user_id=user_id,
+            user_id=str(user_id),  # always store as str
             performance_level=structured_metrics["performance_level"],
             total_questions=structured_metrics["total_questions"],
             correct_count=structured_metrics["correct_count"],
@@ -241,7 +276,7 @@ class QuizService:
 
     async def get_session_analysis(self, session_id: int, space: LearningSpace, user_id: str):
         analysis = await self.repo.get_analysis_for_session(session_id)
-        if not analysis or analysis.space_id != space.id or analysis.user_id != user_id:
+        if not analysis or analysis.space_id != space.id or analysis.user_id != str(user_id):
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Analysis not found or unauthorized")
             
         return {

@@ -12,7 +12,7 @@ from dataclasses import dataclass
 class SubjectInfo:
     name: str
     icon: str       # emoji icon for the subject
-    color: str      # tailwind-compatible color label
+    color: str      # color label for theming (e.g. "blue", "green")
 
 
 @dataclass

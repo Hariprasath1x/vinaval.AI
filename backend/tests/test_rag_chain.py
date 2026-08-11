@@ -6,7 +6,7 @@ Tests:
   - generate_flashcards  : correct parsing, invalid JSON handling
   - generate_quiz_review : correct review text generation, empty results edge case
   - _detect_lang         : language detection heuristic
-  - _retrieve_context    : graceful fallback when ChromaDB is unavailable
+  - _retrieve_syllabus_context    : graceful fallback when ChromaDB is unavailable
 """
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ import pytest
 
 from app.rag.chain import (
     _detect_lang,
-    _retrieve_context,
+    _retrieve_syllabus_context,
     generate_mcqs,
     generate_flashcards,
     generate_quiz_review,
@@ -64,12 +64,12 @@ class TestDetectLang:
 
 class TestRetrieveContext:
     def test_returns_empty_when_chromadb_raises(self):
-        """If get_collections_for_subject raises an exception, _retrieve_context returns empty."""
+        """If get_collections_for_subject raises an exception, _retrieve_syllabus_context returns empty."""
         with patch(
             "app.core.chroma.get_collections_for_subject",
             side_effect=Exception("ChromaDB not running"),
         ):
-            context, n = _retrieve_context("NEET", "Physics", "gravity", n_results=4)
+            context, n = _retrieve_syllabus_context("NEET", "Physics", "gravity", n_results=4)
         # Should gracefully return empty context
         assert context == ""
         assert n == 0
@@ -80,7 +80,7 @@ class TestRetrieveContext:
             "app.core.chroma.get_collections_for_subject",
             return_value=[],
         ):
-            context, n = _retrieve_context("NEET", "Botany", "cell division", n_results=4)
+            context, n = _retrieve_syllabus_context("NEET", "Botany", "cell division", n_results=4)
         assert context == ""
         assert n == 0
 
@@ -133,7 +133,7 @@ class TestGenerateMCQs:
 
         with (
             patch("app.rag.chain.AsyncGroq") as mock_cls,
-            patch("app.rag.chain._retrieve_context", return_value=("", 0)),
+            patch("app.rag.chain._retrieve_syllabus_context", return_value=("", 0)),
         ):
             mock_client = AsyncMock()
             mock_client.chat.completions.create = AsyncMock(return_value=mock_resp)
@@ -160,7 +160,7 @@ class TestGenerateMCQs:
 
         with (
             patch("app.rag.chain.AsyncGroq") as mock_cls,
-            patch("app.rag.chain._retrieve_context", return_value=("", 0)),
+            patch("app.rag.chain._retrieve_syllabus_context", return_value=("", 0)),
         ):
             mock_client = AsyncMock()
             mock_client.chat.completions.create = AsyncMock(return_value=mock_resp)
@@ -186,7 +186,7 @@ class TestGenerateMCQs:
 
         with (
             patch("app.rag.chain.AsyncGroq") as mock_cls,
-            patch("app.rag.chain._retrieve_context", return_value=("", 0)),
+            patch("app.rag.chain._retrieve_syllabus_context", return_value=("", 0)),
         ):
             mock_client = AsyncMock()
             mock_client.chat.completions.create = AsyncMock(return_value=mock_resp)
@@ -204,7 +204,7 @@ class TestGenerateMCQs:
 
         with (
             patch("app.rag.chain.AsyncGroq") as mock_cls,
-            patch("app.rag.chain._retrieve_context", return_value=("", 0)),
+            patch("app.rag.chain._retrieve_syllabus_context", return_value=("", 0)),
         ):
             mock_client = AsyncMock()
             mock_client.chat.completions.create = AsyncMock(return_value=mock_resp)
@@ -221,7 +221,7 @@ class TestGenerateMCQs:
 
         with (
             patch("app.rag.chain.AsyncGroq") as mock_cls,
-            patch("app.rag.chain._retrieve_context", return_value=("", 0)),
+            patch("app.rag.chain._retrieve_syllabus_context", return_value=("", 0)),
         ):
             mock_client = AsyncMock()
             mock_client.chat.completions.create = AsyncMock(return_value=mock_resp)
@@ -248,7 +248,7 @@ class TestGenerateMCQs:
 
         with (
             patch("app.rag.chain.AsyncGroq") as mock_cls,
-            patch("app.rag.chain._retrieve_context", return_value=("", 0)),
+            patch("app.rag.chain._retrieve_syllabus_context", return_value=("", 0)),
         ):
             mock_client = AsyncMock()
             mock_client.chat.completions.create = AsyncMock(return_value=mock_resp)
@@ -282,7 +282,7 @@ class TestGenerateFlashcards:
 
         with (
             patch("app.rag.chain.AsyncGroq") as mock_cls,
-            patch("app.rag.chain._retrieve_context", return_value=("", 0)),
+            patch("app.rag.chain._retrieve_syllabus_context", return_value=("", 0)),
         ):
             mock_client = AsyncMock()
             mock_client.chat.completions.create = AsyncMock(return_value=mock_resp)
@@ -304,7 +304,7 @@ class TestGenerateFlashcards:
 
         with (
             patch("app.rag.chain.AsyncGroq") as mock_cls,
-            patch("app.rag.chain._retrieve_context", return_value=("", 0)),
+            patch("app.rag.chain._retrieve_syllabus_context", return_value=("", 0)),
         ):
             mock_client = AsyncMock()
             mock_client.chat.completions.create = AsyncMock(return_value=mock_resp)
@@ -322,7 +322,7 @@ class TestGenerateFlashcards:
 
         with (
             patch("app.rag.chain.AsyncGroq") as mock_cls,
-            patch("app.rag.chain._retrieve_context", return_value=("", 0)),
+            patch("app.rag.chain._retrieve_syllabus_context", return_value=("", 0)),
         ):
             mock_client = AsyncMock()
             mock_client.chat.completions.create = AsyncMock(return_value=mock_resp)

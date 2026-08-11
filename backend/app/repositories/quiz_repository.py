@@ -66,6 +66,19 @@ class QuizRepository:
         result = await self.db.execute(stmt)
         return list(result.scalars().all())
 
+    async def get_global_sessions_for_user(self, user_id: int, limit: int = 50) -> List["QuizSession"]:
+        from app.models.quiz import QuizSession
+        from app.models.space import LearningSpace
+        stmt = (
+            select(QuizSession)
+            .join(LearningSpace, QuizSession.space_id == LearningSpace.id)
+            .where(LearningSpace.user_id == user_id)
+            .order_by(QuizSession.created_at.desc())
+            .limit(limit)
+        )
+        result = await self.db.execute(stmt)
+        return list(result.scalars().all())
+
     # ── Attempts ───────────────────────────────────────────────────────────────
 
     async def save_attempt(
@@ -127,7 +140,50 @@ class QuizRepository:
             "topics": topics,
         }
 
-    # ── Performance Analysis ───────────────────────────────────────────────────
+    async def get_batch_stats(self, space_ids: List[int]) -> dict:
+        """Aggregate attempt stats for multiple spaces in a single query."""
+        if not space_ids:
+            return {}
+            
+        result = await self.db.execute(
+            select(QuizAttempt.space_id, QuizAttempt.is_exam, QuizAttempt.is_correct)
+            .where(QuizAttempt.space_id.in_(space_ids))
+        )
+        rows = result.fetchall()
+        
+        stats_map = {sid: {"practice_total": 0, "practice_correct": 0, "exam_total": 0, "exam_correct": 0, "topics": set()} for sid in space_ids}
+        
+        for row in rows:
+            sid = row.space_id
+            if row.is_exam:
+                stats_map[sid]["exam_total"] += 1
+                if row.is_correct:
+                    stats_map[sid]["exam_correct"] += 1
+            else:
+                stats_map[sid]["practice_total"] += 1
+                if row.is_correct:
+                    stats_map[sid]["practice_correct"] += 1
+                    
+        # Topics practiced
+        topics_result = await self.db.execute(
+            select(QuizAttempt.space_id, QuizQuestion.topic)
+            .join(QuizAttempt, QuizAttempt.question_id == QuizQuestion.id)
+            .where(QuizAttempt.space_id.in_(space_ids))
+            .distinct()
+        )
+        for sid, topic in topics_result.fetchall():
+            if sid in stats_map:
+                stats_map[sid]["topics"].add(topic)
+                
+        return {
+            sid: {
+                "practice": (s["practice_total"], s["practice_correct"]),
+                "exam": (s["exam_total"], s["exam_correct"]),
+                "topics": list(s["topics"])
+            } for sid, s in stats_map.items()
+        }
+
+    # ── Performance Analysis ───────────────────────────────────────────────────────────────
 
     async def get_attempts_for_session(self, session_id: int) -> List[QuizAttempt]:
         """Load all attempts for a given session."""

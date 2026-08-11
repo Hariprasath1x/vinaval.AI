@@ -20,3 +20,7 @@ chroma_data/
 
 # Alembic
 alembic/versions/*.pyc
+
+# SQLite databases — do not commit DB files
+*.db
+!vinavalai.db

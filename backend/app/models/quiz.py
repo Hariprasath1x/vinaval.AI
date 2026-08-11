@@ -35,7 +35,7 @@ class QuizSession(Base):
     is_exam = Column(Boolean, nullable=False, default=False)
     lang = Column(String, nullable=False, default="en")
     is_completed = Column(Boolean, nullable=False, default=False)
-    user_id = Column(String, index=True, nullable=True)
+    user_id = Column(Integer, index=True, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     attempts = relationship("QuizAttempt", back_populates="session", cascade="all, delete-orphan")
@@ -67,7 +67,7 @@ class PerformanceAnalysis(Base):
     id = Column(Integer, primary_key=True, index=True)
     session_id = Column(Integer, ForeignKey("quiz_sessions.id", ondelete="CASCADE"), nullable=False, index=True, unique=True)
     space_id = Column(Integer, ForeignKey("learning_spaces.id", ondelete="CASCADE"), nullable=False, index=True)
-    user_id = Column(String, index=True, nullable=True)
+    user_id = Column(Integer, index=True, nullable=True)
 
     # Deterministic fields
     performance_level = Column(String, nullable=False)
