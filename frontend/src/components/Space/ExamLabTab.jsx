@@ -3,6 +3,7 @@ import { api } from '../../services/api';
 import { getTopics } from '../../utils/constants';
 import { ClipboardCheck, Target, Clock, AlertTriangle, Lightbulb, CheckCircle2, XCircle, Bot, RefreshCw } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
+import ResultAnalysisPanel from './ResultAnalysisPanel';
 import './ExamLabTab.css';
 
 const MOCK_EXAM_DURATION_SECONDS = 15 * 60; // 15 mins
@@ -29,6 +30,9 @@ export default function ExamLabTab({ spaceId, space }) {
   const [results, setResults] = useState({});
   const [aiReview, setAiReview] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [analysis, setAnalysis] = useState(null);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [showAnalysis, setShowAnalysis] = useState(false);
 
   const availTopics = space ? getTopics(space.subject) : [];
   
@@ -93,6 +97,8 @@ export default function ExamLabTab({ spaceId, space }) {
         setSessionId(data.session_id);
         setAnswers({});
         setSubmitted(false);
+        setShowAnalysis(false);
+        setAnalysis(null);
         setQuizTopic(targetTopic);
         
         if (isExamMode) {
@@ -136,10 +142,17 @@ export default function ExamLabTab({ spaceId, space }) {
       setResults(detailedResults);
       setAnswers(currentAnswers); // Sync answers if forced
 
-      // Generate Review
-      const reviewData = await api.post(`/spaces/${spaceId}/quiz/review`, { results: reviewResults });
-      if (reviewData && reviewData.review) {
-        setAiReview(reviewData.review);
+      // ── Step 2: Complete session & Generate Performance Analysis ──
+      setAnalyzing(true);
+      try {
+        const compData = await api.post(`/spaces/${spaceId}/quiz/sessions/${sessionId}/complete`);
+        if (compData && compData.analysis) {
+           setAnalysis(compData.analysis);
+        }
+      } catch (err) {
+        console.error("Failed to complete session analysis:", err);
+      } finally {
+        setAnalyzing(false);
       }
       
       setSubmitted(true);
@@ -156,6 +169,8 @@ export default function ExamLabTab({ spaceId, space }) {
     setSubmitted(false);
     setResults({});
     setAiReview('');
+    setAnalysis(null);
+    setShowAnalysis(false);
     setTimeRemaining(0);
   };
 
@@ -295,15 +310,19 @@ export default function ExamLabTab({ spaceId, space }) {
             className="btn-primary" 
             style={{ padding: '1rem', fontSize: '1.1rem', justifyContent: 'center' }} 
             onClick={() => submitQuiz()}
-            disabled={submitting}
+            disabled={submitting || analyzing}
           >
-            {submitting ? 'Submitting...' : '📩 Submit Quiz'}
+            {submitting ? 'Submitting Answers...' : analyzing ? 'Analyzing Performance...' : '📩 Submit Quiz'}
           </button>
         </div>
       )}
 
       {/* Results */}
-      {submitted && (
+      {submitted && showAnalysis && analysis && (
+        <ResultAnalysisPanel analysis={analysis} spaceId={spaceId} onBack={() => setShowAnalysis(false)} />
+      )}
+
+      {submitted && !showAnalysis && (
         <div className="results-summary animate-fade-in">
           {(() => {
             const correctCount = Object.values(results).filter(r => r.is_correct).length;
@@ -325,6 +344,11 @@ export default function ExamLabTab({ spaceId, space }) {
                     <span className="lbl">Mode</span>
                   </div>
                 </div>
+                {analysis && (
+                  <button className="btn-primary" style={{marginTop: '1rem'}} onClick={() => setShowAnalysis(true)}>
+                    <Target size={18} /> View Result Analysis
+                  </button>
+                )}
               </div>
             );
           })()}

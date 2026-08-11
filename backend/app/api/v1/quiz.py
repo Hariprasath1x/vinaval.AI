@@ -18,6 +18,7 @@ from app.schemas.quiz import (
     QuizReviewResponse,
     QuizSessionOut,
 )
+from app.schemas.performance_analysis import PerformanceAnalysisOut
 
 router = APIRouter(prefix="/spaces", tags=["Quiz"])
 
@@ -102,3 +103,31 @@ async def get_quiz_history(
     await space_svc.get_space(space_id, current_user.id)
     quiz_svc = QuizService(db)
     return await quiz_svc.get_history(space_id)
+
+
+@router.post("/{space_id}/quiz/sessions/{session_id}/complete")
+async def complete_quiz_session(
+    space_id: int,
+    session_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Marks a session as complete, generates performance analysis and AI narrative."""
+    space_svc = SpaceService(db)
+    space = await space_svc.get_space(space_id, current_user.id)
+    quiz_svc = QuizService(db)
+    return await quiz_svc.complete_session(session_id, space, current_user.id)
+
+
+@router.get("/{space_id}/quiz/sessions/{session_id}/analysis", response_model=PerformanceAnalysisOut)
+async def get_session_analysis(
+    space_id: int,
+    session_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Retrieve the saved performance analysis for a completed session (no regeneration)."""
+    space_svc = SpaceService(db)
+    space = await space_svc.get_space(space_id, current_user.id)
+    quiz_svc = QuizService(db)
+    return await quiz_svc.get_session_analysis(session_id, space, current_user.id)

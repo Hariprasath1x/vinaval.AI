@@ -13,7 +13,10 @@ from app.schemas.quiz import (
     QuizReviewRequest,
     QuizReviewResponse,
 )
-from app.rag.chain import generate_mcqs, generate_quiz_review
+from app.rag.chain import generate_mcqs, generate_quiz_review, generate_performance_analysis
+from app.services.performance_analyzer import performance_analyzer
+from app.models.quiz import PerformanceAnalysis
+import json
 
 
 class QuizService:
@@ -174,3 +177,89 @@ class QuizService:
             review_text = "Good effort! Keep studying and practicing to improve your scores."
 
         return QuizReviewResponse(review=review_text)
+
+    async def complete_session(self, session_id: int, space: LearningSpace, user_id: str):
+        session = await self.repo.get_session(session_id)
+        if not session or session.space_id != space.id:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+            
+        session.is_completed = True
+        session.user_id = user_id
+        await self.repo.update_session(session)
+        
+        attempts = await self.repo.get_attempts_for_session(session_id)
+        questions = await self.repo.get_questions_for_space(space.id)
+        
+        structured_metrics = performance_analyzer.compute(session, attempts, questions)
+        
+        # AI call
+        ai_narrative = None
+        overall_summary = None
+        ai_generated = False
+        try:
+            analysis_dict = await generate_performance_analysis(
+                exam=space.exam_id,
+                subject=space.subject,
+                structured_metrics=structured_metrics
+            )
+            ai_narrative = analysis_dict.get("ai_narrative")
+            overall_summary = analysis_dict.get("overall_summary")
+            ai_generated = True
+        except Exception:
+            pass
+            
+        analysis = PerformanceAnalysis(
+            session_id=session.id,
+            space_id=space.id,
+            user_id=user_id,
+            performance_level=structured_metrics["performance_level"],
+            total_questions=structured_metrics["total_questions"],
+            correct_count=structured_metrics["correct_count"],
+            incorrect_count=structured_metrics["incorrect_count"],
+            skipped_count=structured_metrics["skipped_count"],
+            score_pct=structured_metrics["score_pct"],
+            strong_areas=json.dumps(structured_metrics["strong_areas"]),
+            developing_areas=json.dumps(structured_metrics["developing_areas"]),
+            priority_areas=json.dumps(structured_metrics["priority_areas"]),
+            topic_insights=json.dumps(structured_metrics["topic_insights"]),
+            mistake_patterns=json.dumps(structured_metrics["mistake_patterns"]),
+            recommendations=json.dumps(structured_metrics["recommendations"]),
+            overall_summary=overall_summary,
+            ai_narrative=ai_narrative,
+            ai_generated=ai_generated,
+        )
+        await self.repo.save_analysis(analysis)
+        
+        # Merge AI text into the return dict
+        structured_metrics["ai_narrative"] = ai_narrative
+        structured_metrics["overall_summary"] = overall_summary
+        structured_metrics["ai_generated"] = ai_generated
+        structured_metrics["session_id"] = session.id
+        structured_metrics["space_id"] = space.id
+        
+        return {"session": session, "analysis": structured_metrics}
+
+    async def get_session_analysis(self, session_id: int, space: LearningSpace, user_id: str):
+        analysis = await self.repo.get_analysis_for_session(session_id)
+        if not analysis or analysis.space_id != space.id or analysis.user_id != user_id:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Analysis not found or unauthorized")
+            
+        return {
+            "session_id": analysis.session_id,
+            "space_id": analysis.space_id,
+            "performance_level": analysis.performance_level,
+            "total_questions": analysis.total_questions,
+            "correct_count": analysis.correct_count,
+            "incorrect_count": analysis.incorrect_count,
+            "skipped_count": analysis.skipped_count,
+            "score_pct": analysis.score_pct,
+            "strong_areas": json.loads(analysis.strong_areas) if analysis.strong_areas else [],
+            "developing_areas": json.loads(analysis.developing_areas) if analysis.developing_areas else [],
+            "priority_areas": json.loads(analysis.priority_areas) if analysis.priority_areas else [],
+            "topic_insights": json.loads(analysis.topic_insights) if analysis.topic_insights else [],
+            "mistake_patterns": json.loads(analysis.mistake_patterns) if analysis.mistake_patterns else [],
+            "recommendations": json.loads(analysis.recommendations) if analysis.recommendations else [],
+            "overall_summary": analysis.overall_summary,
+            "ai_narrative": analysis.ai_narrative,
+            "ai_generated": analysis.ai_generated,
+        }

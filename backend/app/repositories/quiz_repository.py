@@ -126,3 +126,32 @@ class QuizRepository:
             "exam": (exam_total, exam_correct),
             "topics": topics,
         }
+
+    # ── Performance Analysis ───────────────────────────────────────────────────
+
+    async def get_attempts_for_session(self, session_id: int) -> List[QuizAttempt]:
+        """Load all attempts for a given session."""
+        stmt = select(QuizAttempt).where(QuizAttempt.session_id == session_id)
+        result = await self.db.execute(stmt)
+        return list(result.scalars().all())
+
+    async def save_analysis(self, analysis) -> "PerformanceAnalysis":
+        """Save a new performance analysis record."""
+        self.db.add(analysis)
+        await self.db.commit()
+        await self.db.refresh(analysis)
+        return analysis
+
+    async def get_analysis_for_session(self, session_id: int):
+        """Get the performance analysis for a session."""
+        from app.models.quiz import PerformanceAnalysis
+        stmt = select(PerformanceAnalysis).where(PerformanceAnalysis.session_id == session_id)
+        result = await self.db.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def get_analyses_for_space(self, space_id: int, limit: int = 20):
+        """Get past performance analyses for a space."""
+        from app.models.quiz import PerformanceAnalysis
+        stmt = select(PerformanceAnalysis).where(PerformanceAnalysis.space_id == space_id).order_by(PerformanceAnalysis.created_at.desc()).limit(limit)
+        result = await self.db.execute(stmt)
+        return list(result.scalars().all())

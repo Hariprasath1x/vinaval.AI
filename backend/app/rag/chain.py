@@ -106,6 +106,7 @@ def classify_intent(message: str) -> str:
 # ── System Prompts ────────────────────────────────────────────────────────────
 
 SYSTEM_PROMPT = """\
+{lang_enforcement}\
 You are Vinaval AI — an expert, encouraging AI tutor for Tamil Nadu students preparing for \
 {exam} ({exam_tag}).
 
@@ -143,6 +144,7 @@ fully master {subject} and crack {exam} with confidence!\
 
 # System prompt used when active file context is set — stricter grounding
 DOCUMENT_SYSTEM_PROMPT = """\
+{lang_enforcement}\
 You are Vinaval AI — an AI tutor helping a student understand their uploaded study notes.
 
 Active document: **{filename}**
@@ -378,14 +380,25 @@ def _get_topics_from_metadata(exam: str, subject: str, doc_id: int) -> List[str]
 def _build_lang_block(forced_lang: Optional[str] = None) -> str:
     if forced_lang == "ta":
         return (
-            "- You MUST reply entirely in **Tamil**, regardless of what language the student writes in.\n"
-            "  • Use clear, modern Tamil.\n"
-            "  • For technical terms, write the Tamil word first, then the English term in parentheses — e.g. \"ஒளிச்சேர்க்கை (Photosynthesis)\".\n"
-            "  • Use markdown formatting even in Tamil replies.\n"
-            "  • Equations and chemical formulas remain in their universal notation."
+            "🔴 STRICT LANGUAGE RULE — TAMIL ONLY:\n"
+            "- You MUST write your ENTIRE response in **Tamil** only.\n"
+            "- Do NOT write any sentences or bullet points in English.\n"
+            "- Do NOT switch to English mid-response.\n"
+            "- Use clear, modern Tamil script (தமிழ்).\n"
+            "- For technical/scientific terms, write the Tamil word first, then the English term in parentheses — e.g. \"ஒளிச்சேர்க்கை (Photosynthesis)\".\n"
+            "- Headings, bullet points, and all prose MUST be in Tamil.\n"
+            "- Equations and chemical formulas remain in their universal notation (e.g. H₂O, E=mc²)."
         )
     elif forced_lang == "en":
-        return "- You MUST reply entirely in **English**, regardless of what language the student writes in."
+        return (
+            "🔴 STRICT LANGUAGE RULE — ENGLISH ONLY:\n"
+            "- You MUST write your ENTIRE response in **English** only.\n"
+            "- Do NOT write any Tamil script (தமிழ்) anywhere in your response.\n"
+            "- Do NOT include Tamil words, Tamil translations, or Tamil text in parentheses.\n"
+            "- Do NOT mix Tamil and English (no \"Tanglish\").\n"
+            "- All headings, bullet points, explanations, and examples must be in English.\n"
+            "- Even if the reference material contains Tamil text, translate the meaning into English — do NOT copy Tamil script into your answer."
+        )
     else:
         return (
             "- Detect the language the student is writing in.\n"
@@ -409,12 +422,24 @@ def _build_system_prompt(
     tag = EXAM_TAGS.get(exam, exam)
     lang_block = _build_lang_block(forced_lang)
 
+    # Top-of-prompt language enforcement banner (only when language is explicitly forced)
+    if forced_lang in ("en", "ta"):
+        lang_name = "ENGLISH" if forced_lang == "en" else "TAMIL"
+        lang_enforcement = (
+            f"⚠️  CRITICAL INSTRUCTION — OUTPUT LANGUAGE: {lang_name} ONLY\n"
+            f"Your response MUST be written entirely in {lang_name}. "
+            f"No exceptions. Ignore the language of any retrieved context chunks.\n\n"
+        )
+    else:
+        lang_enforcement = ""
+
     if filename:
         return DOCUMENT_SYSTEM_PROMPT.format(
             exam=exam,
             subject=subject,
             filename=filename,
             lang_block=lang_block,
+            lang_enforcement=lang_enforcement,
             context_block=context_block,
         )
 
@@ -423,6 +448,7 @@ def _build_system_prompt(
         exam_tag=tag,
         subject=subject,
         lang_block=lang_block,
+        lang_enforcement=lang_enforcement,
         context_block=context_block,
     )
 
@@ -602,8 +628,10 @@ async def generate_mcqs(
     Generate MCQ questions using Groq, grounded in ChromaDB context.
     """
     search_query = topic if topic else f"{exam} {subject} syllabus overview"
-    context_block, _ = _retrieve_syllabus_context(exam, subject, search_query, n_results=10 if not topic else 5)
+    context_block, _ = _retrieve_syllabus_context(exam, subject, search_query, n_results=5 if not topic else 3)
     if context_block:
+        if len(context_block) > 15000:
+            context_block = context_block[:15000] + "\n...[truncated]"
         context_block = (
             "### Reference Material from Syllabus:\n" + context_block +
             "\nBase your questions on this material where possible.\n"
@@ -628,7 +656,7 @@ async def generate_mcqs(
     response = await client.chat.completions.create(
         model=settings.GROQ_MODEL,
         messages=[{"role": "user", "content": prompt}],
-        max_tokens=4096,
+        max_tokens=3000,
         temperature=0.5,
         stream=False,
     )
@@ -794,3 +822,61 @@ async def generate_quiz_review(
     )
 
     return response.choices[0].message.content.strip()
+
+
+# ── Performance Analysis ──────────────────────────────────────────────────────
+
+PERFORMANCE_ANALYSIS_SYSTEM = """\
+You are an expert academic mentor analyzing a student's performance on a quiz for {exam} {subject}.
+
+Here is the student's structured performance data:
+{metrics_json}
+
+Please write a comprehensive, encouraging performance analysis.
+Provide the output strictly in the following JSON format without any markdown wrappers or extra text.
+{{
+  "overall_summary": "A 2-4 sentence paragraph summarizing their overall performance.",
+  "ai_narrative": "A full, personalized mentor paragraph giving them guidance on what to do next based on their performance, pointing out specific strong/weak topics mentioned in the metrics."
+}}
+"""
+
+async def generate_performance_analysis(
+    exam: str,
+    subject: str,
+    structured_metrics: Dict,
+) -> Dict[str, str]:
+    """Generate a detailed AI performance narrative from structured metrics."""
+    client = AsyncGroq(api_key=settings.GROQ_API_KEY)
+    
+    # We strip out large JSON blobs to save tokens if necessary, but here we pass it all
+    # since it's already structured and relatively small.
+    metrics_json = json.dumps(structured_metrics, indent=2)
+    prompt = PERFORMANCE_ANALYSIS_SYSTEM.format(
+        exam=exam,
+        subject=subject,
+        metrics_json=metrics_json,
+    )
+    
+    response = await client.chat.completions.create(
+        model=settings.GROQ_MODEL,
+        messages=[{"role": "user", "content": prompt}],
+        max_tokens=1000,
+        temperature=0.6,
+        stream=False,
+    )
+    
+    raw = response.choices[0].message.content.strip()
+    if raw.startswith("```"):
+        raw = raw.split("```")[1]
+        if raw.startswith("json"):
+            raw = raw[4:]
+        raw = raw.strip()
+        
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError as e:
+        logger.warning(f"Failed to parse performance analysis JSON. Error: {e}")
+        return {
+            "overall_summary": "Excellent effort on completing the test.",
+            "ai_narrative": "Your performance data was processed successfully."
+        }

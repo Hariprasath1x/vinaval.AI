@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, ForeignKey, func
+from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, ForeignKey, Float, func
 from sqlalchemy.orm import relationship
 from app.core.database import Base
 
@@ -35,9 +35,11 @@ class QuizSession(Base):
     is_exam = Column(Boolean, nullable=False, default=False)
     lang = Column(String, nullable=False, default="en")
     is_completed = Column(Boolean, nullable=False, default=False)
+    user_id = Column(String, index=True, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     attempts = relationship("QuizAttempt", back_populates="session", cascade="all, delete-orphan")
+    analysis = relationship("PerformanceAnalysis", back_populates="session", uselist=False, cascade="all, delete-orphan")
 
 
 class QuizAttempt(Base):
@@ -56,3 +58,40 @@ class QuizAttempt(Base):
 
     question = relationship("QuizQuestion", back_populates="attempts")
     session = relationship("QuizSession", back_populates="attempts")
+
+
+class PerformanceAnalysis(Base):
+    """Stores the generated performance analysis for a completed quiz session."""
+    __tablename__ = "performance_analyses"
+
+    id = Column(Integer, primary_key=True, index=True)
+    session_id = Column(Integer, ForeignKey("quiz_sessions.id", ondelete="CASCADE"), nullable=False, index=True, unique=True)
+    space_id = Column(Integer, ForeignKey("learning_spaces.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(String, index=True, nullable=True)
+
+    # Deterministic fields
+    performance_level = Column(String, nullable=False)
+    total_questions = Column(Integer, nullable=False)
+    correct_count = Column(Integer, nullable=False)
+    incorrect_count = Column(Integer, nullable=False)
+    skipped_count = Column(Integer, nullable=False)
+    score_pct = Column(Float, nullable=False)
+
+    # JSON blobs stored as TEXT
+    strong_areas = Column(Text, nullable=True)
+    developing_areas = Column(Text, nullable=True)
+    priority_areas = Column(Text, nullable=True)
+    topic_insights = Column(Text, nullable=True)
+    mistake_patterns = Column(Text, nullable=True)
+    recommendations = Column(Text, nullable=True)
+
+    # AI-generated fields
+    overall_summary = Column(Text, nullable=True)
+    ai_narrative = Column(Text, nullable=True)
+    ai_generated = Column(Boolean, nullable=False, default=False)
+
+    # Metadata
+    analysis_version = Column(Integer, nullable=False, default=1)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    session = relationship("QuizSession", back_populates="analysis")
