@@ -53,6 +53,81 @@ export const NEET_TOPICS = {
   ],
 };
 
+export const TNPSC_TOPICS = {
+  "History": [
+    "Indus Valley Civilisation", "Vedic Age", "Jainism and Buddhism",
+    "Mauryan Empire", "Gupta Empire", "Sangam Age",
+    "Medieval Tamil Nadu", "Delhi Sultanate", "Mughal Empire",
+    "Maratha Empire", "Advent of Europeans", "British East India Company",
+    "Social Reform Movements", "Indian National Congress",
+    "Non-Cooperation Movement", "Civil Disobedience Movement",
+    "Quit India Movement", "Partition and Independence",
+    "Post-Independence India", "Tamil Nadu History",
+  ],
+  "Geography": [
+    "Universe and Solar System", "Earth — Structure and Interior",
+    "Landforms — Mountains, Plateaus, Plains",
+    "Rocks and Minerals", "Earthquakes and Volcanoes",
+    "Atmosphere — Composition and Layers", "Weather and Climate",
+    "Monsoon in India", "Ocean Currents and Tides",
+    "Natural Vegetation and Wildlife", "Population Geography",
+    "Agriculture in India", "Industries in India",
+    "Transport and Communication", "Indian Rivers and Lakes",
+    "Tamil Nadu — Physical Features", "Tamil Nadu — Agriculture",
+    "Tamil Nadu — Industries", "Environmental Geography",
+    "World Geography — Continents and Oceans",
+  ],
+  "Polity": [
+    "Making of the Indian Constitution", "Preamble", "Fundamental Rights",
+    "Directive Principles of State Policy", "Fundamental Duties",
+    "Parliament — Lok Sabha and Rajya Sabha", "President and Vice President",
+    "Prime Minister and Council of Ministers", "Supreme Court",
+    "High Courts and Subordinate Courts", "State Legislature",
+    "Governor", "Chief Minister and Cabinet",
+    "Local Self-Government — Panchayati Raj", "Urban Local Bodies",
+    "Election Commission", "CAG and UPSC",
+    "Centre-State Relations", "Emergency Provisions",
+    "Constitutional Amendments", "Tamil Nadu Polity",
+  ],
+  "Economics": [
+    "Basic Economic Concepts", "National Income",
+    "Money and Banking", "Inflation and Deflation",
+    "Indian Budget — Union and State", "Five Year Plans",
+    "Agriculture — Green Revolution", "Land Reforms in India",
+    "Poverty and Unemployment", "Economic Reforms 1991",
+    "WTO, IMF and World Bank", "Taxation in India",
+    "Public Finance", "GDP and GNP",
+    "Financial Inclusion and Digital Economy",
+    "Tamil Nadu Economy", "Government Schemes — State and Centre",
+    "Human Development Index", "Sustainable Development Goals",
+  ],
+  "Science": [
+    "Motion and Force", "Work, Energy and Power",
+    "Sound and Light", "Heat and Temperature",
+    "Electricity and Magnetism", "Atomic Structure",
+    "Periodic Table", "Chemical Bonding",
+    "Acids, Bases and Salts", "Metals and Non-Metals",
+    "Carbon Compounds", "Cell Biology",
+    "Plant and Animal Kingdom", "Human Body Systems",
+    "Nutrition and Health", "Disease and Immunity",
+    "Environmental Science", "Space Science",
+    "Inventions and Discoveries", "Science and Technology in India",
+  ],
+  "Current Affairs": [
+    "National Events", "International Events",
+    "Awards and Honours", "Sports",
+    "Science and Technology", "Economy and Finance",
+    "Government Schemes and Policies", "Environment",
+    "Defence and Security", "Tamil Nadu Current Affairs",
+    "Appointments and Resignations", "Books and Authors",
+    "Important Days and Themes", "Summits and Conferences",
+  ],
+};
+
+/**
+ * Return the topic list for a given subject name.
+ * Covers both NEET and TNPSC subjects.
+ */
 export const getTopics = (subject) => {
-  return NEET_TOPICS[subject] || [];
+  return NEET_TOPICS[subject] || TNPSC_TOPICS[subject] || [];
 };

@@ -13,7 +13,7 @@ const EXAMS = {
       { name: "Physics", icon: "⚛️" },
       { name: "Chemistry", icon: "🧪" },
       { name: "Botany", icon: "🌿" },
-      { name: "Zoology", icon: "🦎" },
+      { name: "Zoology", icon: "🦁" },
     ],
   },
   "TNPSC": {
@@ -88,7 +88,25 @@ export default function SelectExam() {
         ))}
       </div>
 
-      {currentExamInfo && (
+      {currentExamInfo && selectedExam === 'TNPSC' && (
+        <div className="tnpsc-coming-soon animate-fade-in" style={{ marginTop: '2rem', textAlign: 'center', padding: '2rem', background: 'var(--surface-color)', borderRadius: '1rem' }}>
+          <div className="tnpsc-icon" style={{ fontSize: '3rem', marginBottom: '1rem' }}>🏛️</div>
+          <h2>Dear Aspirant!</h2>
+          <p style={{ maxWidth: '600px', margin: '0 auto 1rem', color: 'var(--text-secondary)' }}>
+            The <strong>TNPSC</strong> modules are currently under development
+            and will be released very soon. Our team is working hard to bring you a
+            comprehensive, high-quality learning experience tailored specifically for
+            Tamil Nadu Civil Services aspirants.
+          </p>
+          <p style={{ maxWidth: '600px', margin: '0 auto 1.5rem', color: 'var(--text-secondary)' }}>
+            In the meantime, please stay motivated and keep revising your notes.
+            We appreciate your patience and trust in <strong>Vinaval AI</strong>. 🙏
+          </p>
+          <div className="tnpsc-badge" style={{ display: 'inline-block', padding: '0.5rem 1rem', background: 'var(--primary-color)', color: 'white', borderRadius: '2rem', fontWeight: 'bold' }}>Coming Soon ✨</div>
+        </div>
+      )}
+
+      {currentExamInfo && selectedExam !== 'TNPSC' && (
         <div className="subject-selection animate-fade-in">
           <h3>{currentExamInfo.icon} {selectedExam} — Select a Subject</h3>
           <div className="subjects-grid">

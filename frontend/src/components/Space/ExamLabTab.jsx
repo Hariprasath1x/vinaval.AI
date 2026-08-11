@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { api } from '../../services/api';
 import { getTopics } from '../../utils/constants';
-import { ClipboardCheck, Target, Clock, AlertTriangle, Lightbulb, CheckCircle2, XCircle, Bot, RefreshCw } from 'lucide-react';
+import { ClipboardCheck, Target, Clock, Lightbulb, CheckCircle2, XCircle, Bot, RefreshCw } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import ResultAnalysisPanel from './ResultAnalysisPanel';
 import './ExamLabTab.css';
@@ -34,7 +34,7 @@ export default function ExamLabTab({ spaceId, space }) {
   const [analyzing, setAnalyzing] = useState(false);
   const [showAnalysis, setShowAnalysis] = useState(false);
 
-  const availTopics = space ? getTopics(space.subject) : [];
+  const availTopics = React.useMemo(() => space ? getTopics(space.subject) : [], [space]);
   
   useEffect(() => {
     if (availTopics.length > 0) {
@@ -50,69 +50,7 @@ export default function ExamLabTab({ spaceId, space }) {
     }
   }, [isExamMode]);
 
-  // Timer Effect
-  useEffect(() => {
-    if (questions.length > 0 && isExamMode && !submitted && timeRemaining > 0) {
-      timerRef.current = setInterval(() => {
-        setTimeRemaining(prev => {
-          if (prev <= 1) {
-            clearInterval(timerRef.current);
-            handleTimeUp();
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
-    }
-    
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-    };
-  }, [questions, isExamMode, submitted, timeRemaining]);
-
-  const handleTimeUp = async () => {
-    alert("⏰ Time's up! Submitting your answers automatically.");
-    await submitQuiz(answers, true); // force submit with whatever we have
-  };
-
-  const handleGenerate = async (e) => {
-    e.preventDefault();
-    const targetTopic = isExamMode ? "Full Mock Exam" : (topicChoice.startsWith('✏️') ? customTopic.trim() : topicChoice);
-    
-    if (!isExamMode && !targetTopic) {
-      alert("Please select or enter a topic.");
-      return;
-    }
-
-    setGenerating(true);
-    try {
-      const data = await api.post(`/spaces/${spaceId}/quiz/generate`, {
-        topic: isExamMode ? null : targetTopic,
-        count: parseInt(count),
-        lang
-      });
-
-      if (data && data.questions) {
-        setQuestions(data.questions);
-        setSessionId(data.session_id);
-        setAnswers({});
-        setSubmitted(false);
-        setShowAnalysis(false);
-        setAnalysis(null);
-        setQuizTopic(targetTopic);
-        
-        if (isExamMode) {
-          setTimeRemaining(MOCK_EXAM_DURATION_SECONDS);
-        }
-      }
-    } catch (err) {
-      alert("Generation failed: " + err.message);
-    } finally {
-      setGenerating(false);
-    }
-  };
-
-  const submitQuiz = async (currentAnswers = answers, force = false) => {
+  const submitQuiz = React.useCallback(async (currentAnswers = answers, force = false) => {
     if (!force && Object.keys(currentAnswers).length < questions.length) {
       alert("⚠️ Please answer all questions before submitting.");
       return;
@@ -160,6 +98,68 @@ export default function ExamLabTab({ spaceId, space }) {
       alert("Failed to submit quiz: " + err.message);
     } finally {
       setSubmitting(false);
+    }
+  }, [answers, questions, isExamMode, sessionId, spaceId]);
+
+  const handleTimeUp = React.useCallback(async () => {
+    alert("⏰ Time's up! Submitting your answers automatically.");
+    await submitQuiz(answers, true); // force submit with whatever we have
+  }, [answers, submitQuiz]);
+
+  // Timer Effect
+  useEffect(() => {
+    if (questions.length > 0 && isExamMode && !submitted && timeRemaining > 0) {
+      timerRef.current = setInterval(() => {
+        setTimeRemaining(prev => {
+          if (prev <= 1) {
+            clearInterval(timerRef.current);
+            handleTimeUp();
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    }
+    
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, [questions, isExamMode, submitted, timeRemaining, handleTimeUp]);
+
+  const handleGenerate = async (e) => {
+    e.preventDefault();
+    const targetTopic = isExamMode ? "Full Mock Exam" : (topicChoice.startsWith('✏️') ? customTopic.trim() : topicChoice);
+    
+    if (!isExamMode && !targetTopic) {
+      alert("Please select or enter a topic.");
+      return;
+    }
+
+    setGenerating(true);
+    try {
+      const data = await api.post(`/spaces/${spaceId}/quiz/generate`, {
+        topic: isExamMode ? null : targetTopic,
+        count: parseInt(count),
+        lang
+      });
+
+      if (data && data.questions) {
+        setQuestions(data.questions);
+        setSessionId(data.session_id);
+        setAnswers({});
+        setSubmitted(false);
+        setShowAnalysis(false);
+        setAnalysis(null);
+        setQuizTopic(targetTopic);
+        
+        if (isExamMode) {
+          setTimeRemaining(MOCK_EXAM_DURATION_SECONDS);
+        }
+      }
+    } catch (err) {
+      alert("Generation failed: " + err.message);
+    } finally {
+      setGenerating(false);
     }
   };
 

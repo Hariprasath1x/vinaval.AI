@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { api } from '../../services/api';
 import { getTopics } from '../../utils/constants';
 import { Layers, Sparkles, RefreshCw, X, Check, FolderOpen, Trash2, PartyPopper } from 'lucide-react';
@@ -20,7 +20,7 @@ export default function FlashcardsTab({ spaceId, space }) {
   const [savedTopics, setSavedTopics] = useState([]);
   const [loadingTopics, setLoadingTopics] = useState(true);
 
-  const availTopics = space ? getTopics(space.subject) : [];
+  const availTopics = useMemo(() => space ? getTopics(space.subject) : [], [space]);
   
   useEffect(() => {
     if (availTopics.length > 0) {
@@ -28,7 +28,7 @@ export default function FlashcardsTab({ spaceId, space }) {
     }
   }, [availTopics]);
 
-  const loadSavedTopics = async () => {
+  const loadSavedTopics = useCallback(async () => {
     try {
       const topics = await api.get(`/spaces/${spaceId}/flashcards/topics`);
       setSavedTopics(topics || []);
@@ -37,11 +37,11 @@ export default function FlashcardsTab({ spaceId, space }) {
     } finally {
       setLoadingTopics(false);
     }
-  };
+  }, [spaceId]);
 
   useEffect(() => {
     loadSavedTopics();
-  }, [spaceId]);
+  }, [loadSavedTopics]);
 
   const handleGenerate = async (e) => {
     e.preventDefault();
@@ -244,7 +244,8 @@ export default function FlashcardsTab({ spaceId, space }) {
         </div>
       )}
 
-      {(!queue.length || mastered === total) && (
+      {/* Saved Topics: only show when there is no active session */}
+      {queue.length === 0 && (
         <div className="saved-topics-section" style={{ marginTop: '2rem' }}>
           <h3 style={{ marginBottom: '1rem', fontSize: '1.2rem' }}>Saved Flashcard Topics</h3>
           {loadingTopics ? (

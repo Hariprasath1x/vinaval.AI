@@ -7,7 +7,7 @@ import './Dashboard.css';
 
 const EXAM_ICONS = { "NEET": "🩺", "TNPSC": "🏛️" };
 const SUBJECT_ICONS = {
-  "Physics": "⚛️", "Chemistry": "🧪", "Botany": "🌿", "Zoology": "🦎",
+  "Physics": "⚛️", "Chemistry": "🧪", "Botany": "🌿", "Zoology": "🦁",
   "History": "📜", "Geography": "🌍", "Polity": "⚖️",
   "Economics": "📈", "Science": "🔬", "Current Affairs": "📰",
 };
@@ -25,26 +25,28 @@ export default function Dashboard() {
       const spacesData = await api.get('/spaces');
       setSpaces(spacesData || []);
       
+      // Fetch all stats in parallel instead of sequential N+1 calls
+      const statsResults = await Promise.all(
+        (spacesData || []).map(sp =>
+          api.get(`/spaces/${sp.id}/quiz/stats`).catch(() => null)
+        )
+      );
+
       let totalQ = 0;
       let totalC = 0;
       let bestAcc = 0;
       let bestSubj = null;
-      
-      for (const sp of spacesData || []) {
-        try {
-          const st = await api.get(`/spaces/${sp.id}/quiz/stats`);
-          if (st && st.total_all > 0) {
-            totalQ += st.total_all;
-            totalC += st.correct_all;
-            if (st.accuracy_all > bestAcc) {
-              bestAcc = st.accuracy_all;
-              bestSubj = sp.subject;
-            }
+
+      statsResults.forEach((st, idx) => {
+        if (st && st.total_all > 0) {
+          totalQ += st.total_all;
+          totalC += st.correct_all;
+          if (st.accuracy_all > bestAcc) {
+            bestAcc = st.accuracy_all;
+            bestSubj = spacesData[idx].subject;
           }
-        } catch (e) {
-          console.error("Failed to load stats for space", sp.id);
         }
-      }
+      });
       
       const overallAcc = totalQ > 0 ? (totalC / totalQ) * 100 : 0;
       setStats({

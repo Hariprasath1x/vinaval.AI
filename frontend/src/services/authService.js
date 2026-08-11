@@ -5,6 +5,7 @@ export const authService = {
     const data = await api.post("/auth/signup", { name, email, password });
     if (data && data.access_token) {
       localStorage.setItem("token", data.access_token);
+      if (data.refresh_token) localStorage.setItem("refresh_token", data.refresh_token);
       localStorage.setItem("user", JSON.stringify(data.user));
     }
     return data;
@@ -14,6 +15,7 @@ export const authService = {
     const data = await api.post("/auth/login", { email, password });
     if (data && data.access_token) {
       localStorage.setItem("token", data.access_token);
+      if (data.refresh_token) localStorage.setItem("refresh_token", data.refresh_token);
       localStorage.setItem("user", JSON.stringify(data.user));
     }
     return data;
@@ -23,6 +25,7 @@ export const authService = {
     const data = await api.post("/auth/firebase", { id_token: idToken });
     if (data && data.access_token) {
       localStorage.setItem("token", data.access_token);
+      if (data.refresh_token) localStorage.setItem("refresh_token", data.refresh_token);
       localStorage.setItem("user", JSON.stringify(data.user));
     }
     return data;
@@ -49,6 +52,7 @@ export const authService = {
 
   logout: () => {
     localStorage.removeItem("token");
+    localStorage.removeItem("refresh_token");
     localStorage.removeItem("user");
   }
 };
