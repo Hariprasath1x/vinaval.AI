@@ -33,8 +33,10 @@ export default function Auth() {
 
   const handleGoogleSignIn = () => {
     const returnUrl = window.location.origin;
-    // We use the backend's popup endpoint for Google Auth
-    window.location.href = `http://127.0.0.1:8000/auth/google-popup?return_url=${returnUrl}`;
+    // Derive backend root from VITE_API_URL (strip trailing /api/v1 if present)
+    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
+    const backendUrl = apiUrl.replace(/\/api\/v1\/?$/, '');
+    window.location.href = `${backendUrl}/auth/google-popup?return_url=${returnUrl}`;
   };
 
   return (
