@@ -59,7 +59,6 @@ Thumbs.db
 *.db
 *.sqlite3
 backend/vinavalai.db
-backend/chroma_db/
 books/
 
 # Secrets and Credentials
@@ -81,7 +80,10 @@ node_modules/
 
 # Local test scripts & artifacts
 backend/cleanup.py
-backend/alembic.ini
 backend/list_tables.py
 backend/uploads/
 logs/
+
+# Frontend env (may contain VITE_ secrets)
+frontend/.env.local
+frontend/.env.production

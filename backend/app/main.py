@@ -12,15 +12,18 @@ from app.core.rate_limit import limiter
 
 settings = get_settings()
 
-_FIREBASE_CONFIG_JS = """{
-  apiKey: "AIzaSyClUultgV7XpYjT1teKAbtchNGpRfqr04A",
-  authDomain: "vinavalai.firebaseapp.com",
-  projectId: "vinavalai",
-  storageBucket: "vinavalai.firebasestorage.app",
-  messagingSenderId: "513537593204",
-  appId: "1:513537593204:web:252db2e288e39dddc0e621",
-  measurementId: "G-RPL46P737E"
-}"""
+_FIREBASE_CONFIG_JS = (
+    "{\n"
+    f'  apiKey: "{settings.FIREBASE_WEB_API_KEY}",\n'
+    '  authDomain: "vinavalai.firebaseapp.com",\n'
+    '  projectId: "vinavalai",\n'
+    '  storageBucket: "vinavalai.firebasestorage.app",\n'
+    '  messagingSenderId: "513537593204",\n'
+    '  appId: "1:513537593204:web:252db2e288e39dddc0e621",\n'
+    '  measurementId: "G-RPL46P737E"\n'
+    "}"
+)
+
 
 
 _CDN = "https://www.gstatic.com/firebasejs/10.12.0"

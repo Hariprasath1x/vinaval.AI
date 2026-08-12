@@ -1,0 +1,84 @@
+# =============================================================================
+# VinavalAI — Render Blueprint
+# Branch: react_version
+# =============================================================================
+# This file defines the Render deployment for both the backend (Web Service)
+# and frontend (Static Site).
+#
+# IMPORTANT: All secret values (API keys, JWT secret, etc.) must be configured
+# manually in the Render dashboard under "Environment Variables".
+# Never add real secrets to this file.
+#
+# Firebase service-account JSON must be uploaded via Render's Secret Files:
+#   Path: /etc/secrets/firebase.json
+#   Then set: FIREBASE_SERVICE_ACCOUNT_PATH=/etc/secrets/firebase.json
+# =============================================================================
+
+services:
+  # ---------------------------------------------------------------------------
+  # Backend — FastAPI (Native Python Web Service)
+  # ---------------------------------------------------------------------------
+  - type: web
+    name: vinavalai-backend
+    runtime: python
+    branch: react_version
+    rootDir: backend
+
+    buildCommand: pip install -r requirements.txt && alembic upgrade head
+
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+
+    healthCheckPath: /health
+
+    # Environment variables — set values in Render dashboard.
+    # Do NOT put real secrets here.
+    envVars:
+      - key: APP_NAME
+        value: VinavalAI
+      - key: APP_ENV
+        value: production
+      - key: DEBUG
+        value: "false"
+
+      # SQLite — do NOT change to PostgreSQL
+      - key: DATABASE_URL
+        value: sqlite+aiosqlite:///./vinavalai.db
+
+      # ChromaDB — must point to the pre-built chroma_db directory
+      - key: CHROMA_PERSIST_DIR
+        value: ./chroma_db
+
+      # --- Set the following in the Render dashboard (not here) ---
+
+      # SECRET_KEY          — generate with: python -c "import secrets; print(secrets.token_hex(32))"
+      # GROQ_API_KEY        — from console.groq.com
+      # GEMINI_API_KEY      — from Google AI Studio
+      # FIREBASE_WEB_API_KEY — from Firebase Console → Project Settings → General
+      # FIREBASE_SERVICE_ACCOUNT_PATH — set to /etc/secrets/firebase.json
+      #                                 after uploading via Secret Files
+      # FRONTEND_URL        — set to https://vinaval.hariprasath.me
+
+  # ---------------------------------------------------------------------------
+  # Frontend — React/Vite (Static Site)
+  # ---------------------------------------------------------------------------
+  - type: web
+    name: vinavalai-frontend
+    runtime: static
+    branch: react_version
+    rootDir: frontend
+
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
+
+    # SPA rewrite: all routes serve index.html (also handled by public/_redirects)
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+
+    envVars:
+      # Set this to your deployed backend URL, e.g.:
+      # VITE_API_URL=https://vinavalai-backend.onrender.com/api/v1
+      # Configure this in the Render dashboard — do NOT hardcode here.
+      - key: VITE_API_URL
+        value: ""   # REPLACE with actual backend URL in Render dashboard

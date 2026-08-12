@@ -6,6 +6,7 @@ import httpx
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
 from app.services.auth_service import AuthService
+from app.core.config import get_settings as _get_settings
 from app.schemas.auth import (
     TokenResponse,
     UserResponse,
@@ -19,7 +20,9 @@ from app.models.user import User
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
-_FIREBASE_API_KEY = "AIzaSyClUultgV7XpYjT1teKAbtchNGpRfqr04A"
+# Firebase Web API key — public client-side key, safe to expose in source.
+# Move to FIREBASE_WEB_API_KEY env var for easy rotation without code changes.
+_FIREBASE_API_KEY = _get_settings().FIREBASE_WEB_API_KEY
 
 
 @router.post("/refresh", response_model=TokenResponse)

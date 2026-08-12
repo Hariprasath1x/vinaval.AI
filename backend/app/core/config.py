@@ -27,11 +27,15 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: Optional[str] = None
     GEMINI_MODEL: str = "gemini-1.5-flash"
 
-    # ChromaDB
-    CHROMA_PERSIST_DIR: str = "./chroma_data"
+    # ChromaDB — must match the directory where chroma_db/ was pre-built
+    CHROMA_PERSIST_DIR: str = "./chroma_db"
+
+    # Firebase Web API Key (public client-side key — not the service account)
+    # Used for the forgot-password email flow via Firebase REST API
+    FIREBASE_WEB_API_KEY: str = ""
 
     # Frontend
-    FRONTEND_URL: str = "http://localhost:8501"
+    FRONTEND_URL: str = "http://localhost:5173"
 
     class Config:
         env_file = ".env"

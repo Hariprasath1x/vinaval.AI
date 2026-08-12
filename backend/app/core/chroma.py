@@ -24,6 +24,9 @@ import os
 
 logger = logging.getLogger(__name__)
 
+from app.core.config import get_settings as _get_settings
+_settings = _get_settings()
+
 try:
     import chromadb
     from chromadb.config import Settings
@@ -35,9 +38,15 @@ except ImportError:
     Settings = None
     embedding_functions = None
 
-# Store ChromaDB persistently in the backend root directory
+# ChromaDB persistence directory: configurable via CHROMA_PERSIST_DIR env var.
+# Default resolves to <backend_root>/chroma_db where the pre-built RAG data lives.
 _BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-CHROMA_PATH = os.path.join(_BACKEND_DIR, "chroma_db")
+_configured_dir = _settings.CHROMA_PERSIST_DIR
+CHROMA_PATH = (
+    _configured_dir
+    if os.path.isabs(_configured_dir)
+    else os.path.join(_BACKEND_DIR, _configured_dir.lstrip("./\\"))
+)
 
 # ── Multilingual Embedding Model ───────────────────────────────────────────────
 # paraphrase-multilingual-MiniLM-L12-v2:
