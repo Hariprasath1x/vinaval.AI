@@ -89,31 +89,6 @@ def get_chroma_client():
         )
     global _client
     if _client is None:
-        if os.getenv("CHROMA_DIAGNOSTIC", "false").lower() == "true":
-            import tempfile
-            temp_dir = tempfile.mkdtemp(prefix="vinavalai_chroma_diagnostic_")
-
-            try:
-                import resource
-                diag_before_rss = f"{resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024:.2f}"
-            except ImportError:
-                diag_before_rss = "N/A"
-
-            logger.info("[RAG-DIAG] Starting empty Chroma PersistentClient test")
-            logger.info(f"[RAG-DIAG] Temporary path={temp_dir}")
-            logger.info(f"[RAG-DIAG] RSS before temporary client={diag_before_rss}")
-
-            diag_start = time.perf_counter()
-            try:
-                temp_client = chromadb.PersistentClient(  # type: ignore
-                    path=temp_dir,
-                    settings=Settings(anonymized_telemetry=False),  # type: ignore
-                )
-                diag_elapsed = (time.perf_counter() - diag_start) * 1000
-                logger.info(f"[RAG-DIAG] Empty Chroma PersistentClient initialized successfully elapsed_ms={diag_elapsed:.2f}")
-            except Exception as e:
-                logger.exception(f"[RAG-DIAG] Empty Chroma PersistentClient FAILED exception_type={type(e).__name__}")
-
         base_path = os.path.basename(CHROMA_PATH.rstrip("/\\"))
 
         try:
