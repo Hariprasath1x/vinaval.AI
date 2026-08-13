@@ -28,11 +28,13 @@ logger = logging.getLogger(__name__)
 from app.core.config import get_settings as _get_settings
 _settings = _get_settings()
 
+logger.info("[RAG] Importing chromadb")
 try:
     import chromadb
     from chromadb.config import Settings
     from chromadb.utils import embedding_functions
     HAS_CHROMA = True
+    logger.info("[RAG] chromadb import completed")
 except ImportError:
     HAS_CHROMA = False
     chromadb = None
@@ -88,18 +90,32 @@ def get_chroma_client():
     global _client
     if _client is None:
         base_path = os.path.basename(CHROMA_PATH.rstrip("/\\"))
-        logger.info(f"[RAG] Initializing Chroma PersistentClient path={base_path}")
+
+        try:
+            import resource
+            before_rss = f"{resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024:.2f}"
+        except ImportError:
+            before_rss = "N/A"
+
+        logger.info(f"[RAG] About to initialize Chroma PersistentClient path={base_path} rss_mb={before_rss}")
         start = time.perf_counter()
         try:
             _client = chromadb.PersistentClient(  # type: ignore
                 path=CHROMA_PATH,
                 settings=Settings(anonymized_telemetry=False),  # type: ignore
             )
-            elapsed = (time.perf_counter() - start) * 1000
-            logger.info(f"[RAG] Chroma PersistentClient initialized elapsed_ms={elapsed:.2f}")
         except Exception as e:
-            logger.exception(f"[RAG] Chroma initialization FAILED exception_type={type(e).__name__} exception={str(e)}")
+            logger.exception("[RAG] Chroma PersistentClient initialization failed")
             raise
+
+        elapsed = (time.perf_counter() - start) * 1000
+        try:
+            import resource
+            after_rss = f"{resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024:.2f}"
+        except ImportError:
+            after_rss = "N/A"
+
+        logger.info(f"[RAG] Chroma PersistentClient initialized successfully elapsed_ms={elapsed:.2f} rss_mb={after_rss}")
     return _client
 
 
