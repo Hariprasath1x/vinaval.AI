@@ -181,9 +181,18 @@ def _retrieve_syllabus_context(exam: str, subject: str, query: str, n_results: i
     """
     try:
         from app.core.chroma import get_collections_for_subject
+
+        logger.info(f"[RAG] Looking up collections exam={exam} subject={subject}")
+        start_lookup = time.perf_counter()
         collections = get_collections_for_subject(exam, subject)
+        lookup_elapsed = (time.perf_counter() - start_lookup) * 1000
+
         if not collections:
+            logger.info(f"[RAG] Collections found count=0 names=[] elapsed_ms={lookup_elapsed:.2f}")
             return "", 0
+
+        names = [c.name for c in collections]
+        logger.info(f"[RAG] Collections found count={len(collections)} names={names} elapsed_ms={lookup_elapsed:.2f}")
 
         all_docs: List[str] = []
         all_metas: List[dict] = []
@@ -191,12 +200,19 @@ def _retrieve_syllabus_context(exam: str, subject: str, query: str, n_results: i
 
         for col in collections:
             try:
+                logger.info(f"[RAG] Querying collection={col.name}")
                 k = min(max(2, n_results), col.count())
                 if k == 0:
                     continue
+
+                logger.info("[RAG] Executing similarity search")
+                query_start = time.perf_counter()
                 results = col.query(query_texts=[query], n_results=k)
+                query_elapsed = (time.perf_counter() - query_start) * 1000
                 docs = results.get("documents", [[]])[0]
                 metas = results.get("metadatas", [[]])[0]
+                logger.info(f"[RAG] Collection query completed collection={col.name} chunks={len(docs)} elapsed_ms={query_elapsed:.2f}")
+
                 for doc, meta in zip(docs, metas):
                     # Skip user-uploaded chunks when in syllabus-only mode
                     if meta.get("source") == "user_upload":
@@ -243,9 +259,18 @@ def _retrieve_doc_context(
     """
     try:
         from app.core.chroma import get_collections_for_subject
+
+        logger.info(f"[RAG] Looking up collections exam={exam} subject={subject}")
+        start_lookup = time.perf_counter()
         collections = get_collections_for_subject(exam, subject)
+        lookup_elapsed = (time.perf_counter() - start_lookup) * 1000
+
         if not collections:
+            logger.info(f"[RAG] Collections found count=0 names=[] elapsed_ms={lookup_elapsed:.2f}")
             return "", 0
+
+        names = [col.name for col in collections]
+        logger.info(f"[RAG] Collections found count={len(collections)} names={names} elapsed_ms={lookup_elapsed:.2f}")
 
         all_docs: List[str] = []
         all_metas: List[dict] = []
@@ -253,16 +278,22 @@ def _retrieve_doc_context(
 
         for col in collections:
             try:
+                logger.info(f"[RAG] Querying collection={col.name}")
                 k = min(max(2, n_results), col.count())
                 if k == 0:
                     continue
+
+                logger.info("[RAG] Executing similarity search")
+                query_start = time.perf_counter()
                 results = col.query(
                     query_texts=[query],
                     n_results=k,
                     where={"doc_id": doc_id},
                 )
+                query_elapsed = (time.perf_counter() - query_start) * 1000
                 docs = results.get("documents", [[]])[0]
                 metas = results.get("metadatas", [[]])[0]
+                logger.info(f"[RAG] Collection query completed collection={col.name} chunks={len(docs)} elapsed_ms={query_elapsed:.2f}")
                 for doc, meta in zip(docs, metas):
                     key = doc[:120]
                     if key not in seen:
@@ -544,17 +575,21 @@ async def stream_chat(
     # 1. Try Gemini API first
     if settings.GEMINI_API_KEY:
         try:
+            logger.info("[LLM] Starting LLM request")
+            logger.info(f"[LLM] provider=gemini model={settings.GEMINI_MODEL} context_chunks={n_chunks} history_messages={len(recent_history)}")
             genai.configure(api_key=settings.GEMINI_API_KEY)
             model = genai.GenerativeModel(settings.GEMINI_MODEL, system_instruction=system_prompt)
-            
+
             gemini_history = []
             for msg in recent_history:
                 # Map roles: 'assistant' -> 'model', 'user' -> 'user'
                 role = "model" if msg["role"] == "assistant" else "user"
                 gemini_history.append({"role": role, "parts": [msg["content"]]})
-                
+
             gemini_history.append({"role": "user", "parts": [user_message]})
-            
+
+            logger.info("[LLM] LLM request started")
+            llm_start = time.perf_counter()
             stream = await model.generate_content_async(
                 contents=gemini_history,
                 stream=True,
@@ -563,33 +598,58 @@ async def stream_chat(
                     temperature=0.7,
                 )
             )
-            
+
+            first_chunk = True
             async for chunk in stream:
+                if first_chunk:
+                    first_elapsed = (time.perf_counter() - llm_start) * 1000
+                    logger.info(f"[LLM] First response chunk received elapsed_ms={first_elapsed:.2f}")
+                    first_chunk = False
                 if chunk.text:
                     yield chunk.text
+
+            llm_elapsed = (time.perf_counter() - llm_start) * 1000
+            logger.info(f"[LLM] LLM stream completed elapsed_ms={llm_elapsed:.2f}")
             return  # Successfully streamed from Gemini, exit function
-            
+
         except Exception as e:
             logger.warning("Gemini API failed (%s), falling back to Groq...", e)
-            
+
     # 2. Fallback to Groq API
+    logger.info("[LLM] Starting LLM request")
+    logger.info(f"[LLM] provider=groq model={settings.GROQ_MODEL} context_chunks={n_chunks} history_messages={len(recent_history)}")
     client = AsyncGroq(api_key=settings.GROQ_API_KEY)
     messages = [{"role": "system", "content": system_prompt}]
     messages.extend(recent_history)
     messages.append({"role": "user", "content": user_message})
 
-    stream = await client.chat.completions.create(
-        model=settings.GROQ_MODEL,
-        messages=messages,
-        max_tokens=max_tokens,
-        temperature=0.7,
-        stream=True,
-    )
+    logger.info("[LLM] LLM request started")
+    llm_start = time.perf_counter()
+    try:
+        stream = await client.chat.completions.create(
+            model=settings.GROQ_MODEL,
+            messages=messages,
+            max_tokens=max_tokens,
+            temperature=0.7,
+            stream=True,
+        )
 
-    async for chunk in stream:
-        delta = chunk.choices[0].delta.content
-        if delta:
-            yield delta
+        first_chunk = True
+        async for chunk in stream:
+            if first_chunk:
+                first_elapsed = (time.perf_counter() - llm_start) * 1000
+                logger.info(f"[LLM] First response chunk received elapsed_ms={first_elapsed:.2f}")
+                first_chunk = False
+            delta = chunk.choices[0].delta.content
+            if delta:
+                yield delta
+
+        llm_elapsed = (time.perf_counter() - llm_start) * 1000
+        logger.info(f"[LLM] LLM stream completed elapsed_ms={llm_elapsed:.2f}")
+
+    except Exception as e:
+        logger.exception(f"[LLM] LLM request FAILED exception_type={type(e).__name__} exception={str(e)}")
+        raise
 
 
 async def get_chat_response(
@@ -884,7 +944,7 @@ async def generate_performance_analysis(
 ) -> Dict[str, str]:
     """Generate a detailed AI performance narrative from structured metrics."""
     client = AsyncGroq(api_key=settings.GROQ_API_KEY)
-    
+
     # We strip out large JSON blobs to save tokens if necessary, but here we pass it all
     # since it's already structured and relatively small.
     metrics_json = json.dumps(structured_metrics, indent=2)
@@ -893,7 +953,7 @@ async def generate_performance_analysis(
         subject=subject,
         metrics_json=metrics_json,
     )
-    
+
     response = await client.chat.completions.create(
         model=settings.GROQ_MODEL,
         messages=[{"role": "user", "content": prompt}],
@@ -901,14 +961,14 @@ async def generate_performance_analysis(
         temperature=0.6,
         stream=False,
     )
-    
+
     raw = response.choices[0].message.content.strip()
     if raw.startswith("```"):
         raw = raw.split("```")[1]
         if raw.startswith("json"):
             raw = raw[4:]
         raw = raw.strip()
-        
+
     try:
         return json.loads(raw)
     except json.JSONDecodeError as e:

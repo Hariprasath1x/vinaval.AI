@@ -1,3 +1,4 @@
+import logging
 from typing import List, Optional
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,6 +11,8 @@ from app.models.message import ChatMessage
 from app.models.note import SpaceNote
 from app.schemas.space import SpaceCreate, NoteUpdate
 from app.rag.chain import stream_chat
+
+logger = logging.getLogger(__name__)
 
 
 class SpaceService:
@@ -140,14 +143,22 @@ class SpaceService:
         Generator: yields SSE-formatted chunks, then saves both messages to DB.
         Optionally scoped to a chat session. After first exchange, triggers AI name suggestion.
         """
+        logger.info("[CHAT] Stream generator started")
+
         # Build history for this session (last 20 messages for context window)
+        logger.info("[CHAT] Loading chat history")
         messages = await self.repo.get_messages(space.id, session_id=chat_session_id)
+        logger.info(f"[CHAT] Chat history loaded count={len(messages)}")
         history = [{"role": m.role, "content": m.content} for m in messages[-20:]]
         is_first_exchange = len(history) == 0
 
         # Save user message
-        await self.repo.add_message(space.id, "user", user_message, session_id=chat_session_id)
+        logger.info("[CHAT] Persisting user message")
+        msg = await self.repo.add_message(space.id, "user", user_message, session_id=chat_session_id)
+        msg_id = getattr(msg, 'id', 'unknown')
+        logger.info(f"[CHAT] User message persisted message_id={msg_id}")
 
+        logger.info("[CHAT] Starting RAG/LLM stream")
         # Stream AI response
         full_response: list[str] = []
         async for chunk in stream_chat(

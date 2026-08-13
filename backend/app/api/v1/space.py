@@ -1,4 +1,6 @@
 import json
+import logging
+import time
 from typing import List, Optional
 from fastapi import APIRouter, Depends, status, Request
 from fastapi.responses import StreamingResponse
@@ -23,7 +25,7 @@ from app.schemas.space import (
 )
 
 router = APIRouter(prefix="/spaces", tags=["Learning Spaces"])
-
+logger = logging.getLogger(__name__)
 
 # ── Spaces ──────────────────────────────────────────────────────────────────────
 
@@ -144,13 +146,26 @@ async def chat(
     Pass chat_session_id to scope the conversation to a specific named session.
 
     SSE format:
-        data: <json-encoded chunk>\\n\\n
-        data: [DONE]\\n\\n
+        data: <json-encoded chunk>\n\n
+        data: [DONE]\n\n
     """
     service = SpaceService(db)
+
+    start_time = time.perf_counter()
+    logger.info("[CHAT] Request received")
+    logger.info(f"[CHAT] space_id={space_id}")
+    logger.info(f"[CHAT] language={body.lang}")
+    logger.info(f"[CHAT] active_doc_id={body.active_doc_id}")
+    logger.info(f"[CHAT] chat_session_id={body.chat_session_id}")
+    logger.info("[CHAT] User authenticated successfully")
+
     space = await service.get_space(space_id, current_user.id)
+    logger.info("[CHAT] Learning space validated")
 
     async def event_stream():
+        logger.info("[CHAT] SSE generator started")
+        gen_start_time = time.perf_counter()
+        first_chunk = True
         try:
             async for chunk in service.stream_ai_response(
                 space,
@@ -160,10 +175,17 @@ async def chat(
                 active_doc_filename=body.active_doc_filename,
                 chat_session_id=body.chat_session_id,
             ):
+                if first_chunk:
+                    elapsed = (time.perf_counter() - gen_start_time) * 1000
+                    logger.info(f"[CHAT] First SSE chunk yielded elapsed_ms={elapsed:.2f}")
+                    first_chunk = False
                 yield f"data: {json.dumps(chunk)}\n\n"
         except Exception as exc:
+            logger.exception(f"[CHAT] SSE generator FAILED exception_type={type(exc).__name__} exception={str(exc)}")
             yield f"data: {json.dumps({'error': str(exc)})}\n\n"
         finally:
+            elapsed_total = (time.perf_counter() - start_time) * 1000
+            logger.info(f"[CHAT] SSE stream completed elapsed_ms={elapsed_total:.2f}")
             yield "data: [DONE]\n\n"
 
     return StreamingResponse(

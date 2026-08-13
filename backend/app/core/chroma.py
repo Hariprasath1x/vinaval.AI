@@ -21,6 +21,7 @@ from __future__ import annotations
 from typing import Optional, List, Any
 import logging
 import os
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -60,17 +61,17 @@ def get_embedding_function():
     if not HAS_CHROMA:
         return None
     if _embedding_function is None:
-        logger.info("[STARTUP] Initializing embedding model...")
+        logger.info("[EMBED] Initializing embedding model model=paraphrase-multilingual-MiniLM-L12-v2")
+        start = time.perf_counter()
         try:
             _embedding_function = embedding_functions.SentenceTransformerEmbeddingFunction(  # type: ignore
                 model_name="paraphrase-multilingual-MiniLM-L12-v2"
             )
-            logger.info("ChromaDB: using multilingual embedding model (paraphrase-multilingual-MiniLM-L12-v2)")
+            elapsed_ms = (time.perf_counter() - start) * 1000
+            logger.info(f"[EMBED] Embedding model initialized elapsed_ms={elapsed_ms:.2f}")
         except Exception as e:
-            logger.warning("Failed to load multilingual model, falling back to MiniLM-L6: %s", e)
-            _embedding_function = embedding_functions.SentenceTransformerEmbeddingFunction(  # type: ignore
-                model_name="all-MiniLM-L6-v2"
-            )
+            logger.exception(f"[EMBED] Embedding model initialization FAILED exception_type={type(e).__name__} exception={str(e)}")
+            raise
     return _embedding_function
 
 _client: Optional[Any] = None
@@ -86,11 +87,19 @@ def get_chroma_client():
         )
     global _client
     if _client is None:
-        logger.info("[STARTUP] Initializing ChromaDB PersistentClient...")
-        _client = chromadb.PersistentClient(  # type: ignore
-            path=CHROMA_PATH,
-            settings=Settings(anonymized_telemetry=False),  # type: ignore
-        )
+        base_path = os.path.basename(CHROMA_PATH.rstrip("/\\"))
+        logger.info(f"[RAG] Initializing Chroma PersistentClient path={base_path}")
+        start = time.perf_counter()
+        try:
+            _client = chromadb.PersistentClient(  # type: ignore
+                path=CHROMA_PATH,
+                settings=Settings(anonymized_telemetry=False),  # type: ignore
+            )
+            elapsed = (time.perf_counter() - start) * 1000
+            logger.info(f"[RAG] Chroma PersistentClient initialized elapsed_ms={elapsed:.2f}")
+        except Exception as e:
+            logger.exception(f"[RAG] Chroma initialization FAILED exception_type={type(e).__name__} exception={str(e)}")
+            raise
     return _client
 
 
