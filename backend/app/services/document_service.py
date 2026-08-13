@@ -17,7 +17,7 @@ from typing import List, Dict, Any
 
 import fitz  # PyMuPDF
 
-from app.core.chroma import get_collection
+from app.core.vector_store import get_vector_store
 
 # ── Tamil language heuristic (mirrors the one in chain.py) ───────────────────
 _TAMIL_RE = re.compile(r"[\u0B80-\u0BFF]")
@@ -241,7 +241,7 @@ class DocumentService:
         filename = os.path.basename(file_path)
 
         # ── Index into ChromaDB ───────────────────────────────────────────────
-        collection = get_collection(exam, subject, lang)
+        collection = get_vector_store().get_collection(exam, subject, lang)
 
         ids = [f"{doc_id}_{c['chunk_index']}_{uuid.uuid4().hex[:8]}" for c in chunk_dicts]
         metadatas = [
@@ -273,3 +273,36 @@ class DocumentService:
             "topics":      topics,
             "lang":        lang,
         }
+
+    async def delete_document_chunks(self, exam: str, subject: str, doc_id: int, lang: str | None = None) -> int:
+        """
+        Remove all VectorStore chunks that were indexed for a specific document.
+        Chunks are stored with metadata key 'doc_id'.
+        """
+        try:
+            store = get_vector_store()
+            if lang is not None:
+                collections_to_search = [store.get_collection(exam, subject, lang)]
+            else:
+                collections_to_search = store.get_collections_for_subject(exam, subject)
+                # Include the legacy mixed collection if it exists
+                try:
+                    legacy = store.get_collection(exam, subject, None)
+                    if legacy.count() > 0 and not any(c.name == legacy.name for c in collections_to_search):
+                        collections_to_search.append(legacy)
+                except Exception:
+                    pass
+
+            total_deleted = 0
+            for collection in collections_to_search:
+                try:
+                    results = collection.get(where={"doc_id": doc_id})
+                    ids = results.get("ids", [])
+                    if ids:
+                        collection.delete(ids=ids)
+                        total_deleted += len(ids)
+                except Exception:
+                    pass
+            return total_deleted
+        except Exception:
+            return 0

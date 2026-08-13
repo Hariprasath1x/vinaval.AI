@@ -12,7 +12,6 @@ from app.models.user import User
 from app.models.document import SpaceDocument
 from app.services.space_service import SpaceService
 from app.services.document_service import DocumentService
-from app.core.chroma import delete_document_chunks
 
 router = APIRouter(prefix="/spaces", tags=["Documents"])
 
@@ -184,9 +183,10 @@ async def delete_document(
     if not doc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found.")
 
-    # Delete from ChromaDB
+    # Delete from VectorStore via DocumentService
     try:
-        delete_document_chunks(space.exam_id, space.subject, doc_id)
+        doc_svc = DocumentService()
+        await doc_svc.delete_document_chunks(space.exam_id, space.subject, doc_id)
     except Exception as e:
         print(f"Warning: Failed to delete chunks from ChromaDB: {e}")
 

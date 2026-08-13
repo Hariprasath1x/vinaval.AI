@@ -15,7 +15,7 @@ import os
 # Allow imports from the parent package
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from app.core.chroma import get_collection
+from app.core.vector_store import get_vector_store
 
 # ── Seed Data ────────────────────────────────────────────────────────────────
 # Format: list of (exam, subject, topic, chunk_text) tuples.
@@ -206,10 +206,10 @@ def main():
     counts: dict[str, int] = {}
 
     for idx, (exam, subject, topic, text) in enumerate(SEED_DATA):
-        collection = get_collection(exam, subject)
+        collection = get_vector_store().get_collection(exam, subject)
         doc_id = f"{exam}_{subject}_{idx}".lower().replace(" ", "_")
 
-        collection.upsert(
+        collection.add(
             ids=[doc_id],
             documents=[text],
             metadatas=[{

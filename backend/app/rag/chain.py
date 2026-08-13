@@ -180,11 +180,11 @@ def _retrieve_syllabus_context(exam: str, subject: str, query: str, n_results: i
     Used when no active file is selected.
     """
     try:
-        from app.core.chroma import get_collections_for_subject
+        from app.core.vector_store import get_vector_store
 
         logger.info(f"[RAG] Looking up collections exam={exam} subject={subject}")
         start_lookup = time.perf_counter()
-        collections = get_collections_for_subject(exam, subject)
+        collections = get_vector_store().get_collections_for_subject(exam, subject)
         lookup_elapsed = (time.perf_counter() - start_lookup) * 1000
 
         if not collections:
@@ -258,11 +258,11 @@ def _retrieve_doc_context(
     Semantic search restricted to a single uploaded document via doc_id filter.
     """
     try:
-        from app.core.chroma import get_collections_for_subject
+        from app.core.vector_store import get_vector_store
 
         logger.info(f"[RAG] Looking up collections exam={exam} subject={subject}")
         start_lookup = time.perf_counter()
-        collections = get_collections_for_subject(exam, subject)
+        collections = get_vector_store().get_collections_for_subject(exam, subject)
         lookup_elapsed = (time.perf_counter() - start_lookup) * 1000
 
         if not collections:
@@ -332,8 +332,8 @@ def _load_all_doc_chunks(exam: str, subject: str, doc_id: int) -> Tuple[str, int
     Returns (context_block_str, chunk_count, unique_topics_list)
     """
     try:
-        from app.core.chroma import get_collections_for_subject
-        collections = get_collections_for_subject(exam, subject)
+        from app.core.vector_store import get_vector_store
+        collections = get_vector_store().get_collections_for_subject(exam, subject)
         if not collections:
             return "", 0, []
 
@@ -388,8 +388,8 @@ def _get_topics_from_metadata(exam: str, subject: str, doc_id: int) -> List[str]
     Much faster than loading full text.
     """
     try:
-        from app.core.chroma import get_collections_for_subject
-        collections = get_collections_for_subject(exam, subject)
+        from app.core.vector_store import get_vector_store
+        collections = get_vector_store().get_collections_for_subject(exam, subject)
         topics: List[str] = []
         seen: set = set()
         for col in collections:

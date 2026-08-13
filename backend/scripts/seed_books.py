@@ -56,7 +56,7 @@ if sys.platform == "win32":
 # Add parent directory to path so we can import app modules
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from app.core.chroma import get_chroma_client, get_collection, list_all_collections
+from app.core.vector_store import get_vector_store
 
 BOOK_SOURCE_TAG = "book"
 
@@ -318,7 +318,7 @@ def seed_book(
     print(f"   OK Created {len(chunks)} chunks.")
 
     # -- Get language-specific collection --
-    collection = get_collection(exam, subject, lang)
+    collection = get_vector_store().get_collection(exam, subject, lang)
     existing = collection.count()
     col_name = collection.name
     print(f"   Collection '{col_name}' already has {existing} chunks.")
@@ -362,7 +362,7 @@ def delete_book(exam: str, subject: str, lang: str | None, book_title: str) -> N
     if lang:
         lang = lang.lower().strip()
 
-    collection = get_collection(exam, subject, lang)
+    collection = get_vector_store().get_collection(exam, subject, lang)
     results = collection.get(where={"book_title": book_title})
     ids = results.get("ids", [])
     if not ids:
@@ -376,20 +376,20 @@ def delete_book(exam: str, subject: str, lang: str | None, book_title: str) -> N
 
 def list_collections() -> None:
     """List all ChromaDB collections and their chunk counts."""
-    client = get_chroma_client()
-    collections = client.list_collections()
-    if not collections:
+    store = get_vector_store()
+    collection_names = store.list_collections()
+    if not collection_names:
         print("No collections found. Seed some books first!")
         return
     print("\n📚 ChromaDB Collections:")
     print(f"  {'Collection':<35} {'Lang':<6} {'Chunks':>8}")
     print("  " + "─" * 52)
-    for col in collections:
-        c = client.get_collection(col.name, embedding_function=None)
+    for name in collection_names:
+        c = store.get_collection_by_name(name)
         # Infer language from collection name suffix
-        parts = col.name.rsplit("_", 1)
+        parts = name.rsplit("_", 1)
         lang = parts[-1] if len(parts) == 2 and parts[-1] in ("en", "ta") else "—"
-        print(f"  {col.name:<35} {lang:<6} {c.count():>8,}")
+        print(f"  {name:<35} {lang:<6} {c.count():>8,}")
     print()
 
 
