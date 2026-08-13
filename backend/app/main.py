@@ -1,5 +1,9 @@
+import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
+
+logger = logging.getLogger(__name__)
+logger.info("[STARTUP] Importing application")
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from app.core.config import get_settings
@@ -137,6 +141,7 @@ _GOOGLE_POPUP_HTML = f"""<!DOCTYPE html>
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan: initialise Firebase on startup."""
+    logger.info("[STARTUP] Initializing Firebase")
     init_firebase()
     yield
 
@@ -196,7 +201,7 @@ def create_app() -> FastAPI:
     async def root():
         return {"message": "Welcome to VinavalAI API", "docs": "/docs", "health": "/health"}
 
-
+    logger.info("[STARTUP] Application startup complete")
     return app
 
 

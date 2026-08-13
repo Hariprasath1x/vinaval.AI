@@ -53,19 +53,25 @@ CHROMA_PATH = (
 #   • Supports Tamil (ta), English (en), and 50+ other languages.
 #   • Semantic similarity is cross-lingual: Tamil query ↔ English document works.
 #   • ~120 MB download on first use; cached locally after that.
-if HAS_CHROMA:
-    try:
-        _embedding_function = embedding_functions.SentenceTransformerEmbeddingFunction(  # type: ignore
-            model_name="paraphrase-multilingual-MiniLM-L12-v2"
-        )
-        logger.info("ChromaDB: using multilingual embedding model (paraphrase-multilingual-MiniLM-L12-v2)")
-    except Exception as e:
-        logger.warning("Failed to load multilingual model, falling back to MiniLM-L6: %s", e)
-        _embedding_function = embedding_functions.SentenceTransformerEmbeddingFunction(  # type: ignore
-            model_name="all-MiniLM-L6-v2"
-        )
-else:
-    _embedding_function = None
+_embedding_function: Optional[Any] = None
+
+def get_embedding_function():
+    global _embedding_function
+    if not HAS_CHROMA:
+        return None
+    if _embedding_function is None:
+        logger.info("[STARTUP] Initializing embedding model...")
+        try:
+            _embedding_function = embedding_functions.SentenceTransformerEmbeddingFunction(  # type: ignore
+                model_name="paraphrase-multilingual-MiniLM-L12-v2"
+            )
+            logger.info("ChromaDB: using multilingual embedding model (paraphrase-multilingual-MiniLM-L12-v2)")
+        except Exception as e:
+            logger.warning("Failed to load multilingual model, falling back to MiniLM-L6: %s", e)
+            _embedding_function = embedding_functions.SentenceTransformerEmbeddingFunction(  # type: ignore
+                model_name="all-MiniLM-L6-v2"
+            )
+    return _embedding_function
 
 _client: Optional[Any] = None
 
@@ -80,6 +86,7 @@ def get_chroma_client():
         )
     global _client
     if _client is None:
+        logger.info("[STARTUP] Initializing ChromaDB PersistentClient...")
         _client = chromadb.PersistentClient(  # type: ignore
             path=CHROMA_PATH,
             settings=Settings(anonymized_telemetry=False),  # type: ignore
@@ -118,7 +125,7 @@ def get_collection(exam: str, subject: str, lang: str | None = None):
     name = _collection_name(exam, subject, lang)
     return client.get_or_create_collection(
         name=name,
-        embedding_function=_embedding_function,
+        embedding_function=get_embedding_function(),
     )
 
 
@@ -142,7 +149,7 @@ def get_collections_for_subject(exam: str, subject: str) -> list:
     collections = []
     for name in matched:
         try:
-            col = client.get_collection(name=name, embedding_function=_embedding_function)
+            col = client.get_collection(name=name, embedding_function=get_embedding_function())
             if col.count() > 0:
                 collections.append(col)
         except Exception as exc:
