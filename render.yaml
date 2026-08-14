@@ -44,15 +44,20 @@ services:
       - key: DATABASE_URL
         value: sqlite+aiosqlite:///./vinavalai.db
 
-      # ChromaDB — must point to the pre-built chroma_db directory
-      - key: CHROMA_PERSIST_DIR
-        value: ./chroma_db
+      # Pinecone Vector Store
+      - key: VECTOR_STORE_PROVIDER
+        value: pinecone
+      - key: PINECONE_INDEX_NAME
+        value: vinavalai-rag
+      - key: PINECONE_API_KEY
+        sync: false
 
       # --- Set the following in the Render dashboard (not here) ---
 
       # SECRET_KEY          — generate with: python -c "import secrets; print(secrets.token_hex(32))"
       # GROQ_API_KEY        — from console.groq.com
       # GEMINI_API_KEY      — from Google AI Studio
+      # PINECONE_API_KEY    — from Pinecone Console
       # FIREBASE_WEB_API_KEY — from Firebase Console → Project Settings → General
       # FIREBASE_SERVICE_ACCOUNT_PATH — set to /etc/secrets/firebase.json
       #                                 after uploading via Secret Files
