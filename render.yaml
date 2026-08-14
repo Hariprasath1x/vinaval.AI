@@ -40,6 +40,10 @@ services:
       - key: DEBUG
         value: "false"
 
+      # Python version for Render
+      - key: PYTHON_VERSION
+        value: 3.10.6
+
       # SQLite — do NOT change to PostgreSQL
       - key: DATABASE_URL
         value: sqlite+aiosqlite:///./vinavalai.db
