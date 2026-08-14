@@ -30,6 +30,13 @@ class Settings(BaseSettings):
     # ChromaDB — must match the directory where chroma_db/ was pre-built
     CHROMA_PERSIST_DIR: str = "./chroma_db"
 
+    # Vector Store Config
+    VECTOR_STORE_PROVIDER: str = "chroma"
+
+    # Pinecone
+    PINECONE_API_KEY: Optional[str] = None
+    PINECONE_INDEX_NAME: Optional[str] = None
+
     # Firebase Web API Key (public client-side key — not the service account)
     # Used for the forgot-password email flow via Firebase REST API
     FIREBASE_WEB_API_KEY: str = ""
