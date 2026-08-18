@@ -33,10 +33,12 @@ export default function Auth() {
 
   const handleGoogleSignIn = () => {
     const returnUrl = window.location.origin;
-    // Derive backend root from VITE_API_URL (strip trailing /api/v1 if present)
     const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
-    const backendUrl = apiUrl.replace(/\/api\/v1\/?$/, '');
-    window.location.href = `${backendUrl}/auth/google-popup?return_url=${returnUrl}`;
+    let backendUrl = apiUrl.replace(/\/api\/v1\/?$/, '');
+    if (!backendUrl.startsWith('http://') && !backendUrl.startsWith('https://')) {
+      backendUrl = `${window.location.origin}${backendUrl.startsWith('/') ? '' : '/'}${backendUrl}`.replace(/\/$/, '');
+    }
+    window.location.href = `${backendUrl}/auth/google-popup?return_url=${encodeURIComponent(returnUrl)}`;
   };
 
   return (

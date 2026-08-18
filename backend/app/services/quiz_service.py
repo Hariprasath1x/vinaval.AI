@@ -213,13 +213,13 @@ class QuizService:
 
         return QuizReviewResponse(review=review_text)
 
-    async def complete_session(self, session_id: int, space: LearningSpace, user_id: str):
+    async def complete_session(self, session_id: int, space: LearningSpace, user_id: int):
         session = await self.repo.get_session(session_id)
         if not session or session.space_id != space.id:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
             
         session.is_completed = True
-        session.user_id = str(user_id)  # store as str to match DB column type
+        session.user_id = int(user_id)
         await self.repo.update_session(session)
         
         attempts = await self.repo.get_attempts_for_session(session_id)
@@ -246,7 +246,7 @@ class QuizService:
         analysis = PerformanceAnalysis(
             session_id=session.id,
             space_id=space.id,
-            user_id=str(user_id),  # always store as str
+            user_id=int(user_id),
             performance_level=structured_metrics["performance_level"],
             total_questions=structured_metrics["total_questions"],
             correct_count=structured_metrics["correct_count"],
@@ -274,9 +274,9 @@ class QuizService:
         
         return {"session": session, "analysis": structured_metrics}
 
-    async def get_session_analysis(self, session_id: int, space: LearningSpace, user_id: str):
+    async def get_session_analysis(self, session_id: int, space: LearningSpace, user_id: int):
         analysis = await self.repo.get_analysis_for_session(session_id)
-        if not analysis or analysis.space_id != space.id or analysis.user_id != str(user_id):
+        if not analysis or analysis.space_id != space.id or analysis.user_id != int(user_id):
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Analysis not found or unauthorized")
             
         return {

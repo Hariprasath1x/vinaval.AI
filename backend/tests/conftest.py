@@ -26,11 +26,23 @@ sys.modules.setdefault("chromadb.utils", _mock_chroma.utils)
 sys.modules.setdefault("chromadb.utils.embedding_functions", _mock_chroma.utils.embedding_functions)
 sys.modules.setdefault("sentence_transformers", _mock_st)
 
-# Also mock firebase_admin to avoid service-account file requirement
+# Also mock firebase_admin, google.generativeai, and pinecone
 _mock_firebase = MagicMock()
 sys.modules.setdefault("firebase_admin", _mock_firebase)
 sys.modules.setdefault("firebase_admin.credentials", _mock_firebase.credentials)
 sys.modules.setdefault("firebase_admin.auth", _mock_firebase.auth)
+
+_mock_genai = MagicMock()
+sys.modules.setdefault("google", MagicMock())
+sys.modules.setdefault("google.generativeai", _mock_genai)
+
+_mock_pinecone = MagicMock()
+sys.modules.setdefault("pinecone", _mock_pinecone)
+
+import os
+os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///:memory:")
+os.environ.setdefault("SECRET_KEY", "test-secret-key-for-unit-testing-min-32-chars-long")
+os.environ.setdefault("GROQ_API_KEY", "test-groq-api-key")
 
 # ── Now it is safe to import app modules ──────────────────────────────────────
 from httpx import AsyncClient, ASGITransport

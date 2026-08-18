@@ -6,9 +6,10 @@ from __future__ import annotations
 import json
 import logging
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 
-_LOG_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), "logs")
+_BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+_LOG_DIR = os.path.join(_BACKEND_DIR, "logs")
 os.makedirs(_LOG_DIR, exist_ok=True)
 _LOG_PATH = os.path.join(_LOG_DIR, "retrieval.log")
 
@@ -34,7 +35,7 @@ def log_retrieval(
 ) -> None:
     """Write one structured log line per query."""
     record = {
-        "ts":              datetime.utcnow().isoformat(timespec="seconds") + "Z",
+        "ts":              datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
         "space_id":        space_id,
         "active_doc_id":   active_doc_id,
         "intent":          intent,

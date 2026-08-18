@@ -29,7 +29,12 @@ from pathlib import Path
 ROOT         = Path(__file__).parent.resolve()
 BACKEND_DIR  = ROOT / "backend"
 FRONTEND_DIR = ROOT / "frontend"
-VENV_PYTHON  = BACKEND_DIR / "venv" / "Scripts" / "python.exe"
+if sys.platform == "win32":
+    VENV_PYTHON = BACKEND_DIR / "venv" / "Scripts" / "python.exe"
+else:
+    unix_venv_py = BACKEND_DIR / "venv" / "bin" / "python"
+    VENV_PYTHON = unix_venv_py if unix_venv_py.exists() else Path(sys.executable)
+
 LOG_DIR      = ROOT / "logs"
 LOG_FILE     = LOG_DIR / f"startup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
 
@@ -66,24 +71,37 @@ log = logging.getLogger(__name__)
 def kill_port(port: int) -> None:
     """Kill any process currently holding a TCP LISTEN on the given port."""
     try:
-        result = subprocess.run(
-            ["netstat", "-ano"], capture_output=True, text=True
-        )
-        for line in result.stdout.splitlines():
-            if f":{port} " in line and "LISTENING" in line:
-                parts = line.strip().split()
-                pid = int(parts[-1])
-                if pid == 0:
-                    continue
-                sub = subprocess.run(
-                    ["taskkill", "/F", "/PID", str(pid)],
-                    capture_output=True, text=True,
-                )
-                if sub.returncode == 0:
+        if sys.platform == "win32":
+            result = subprocess.run(
+                ["netstat", "-ano"], capture_output=True, text=True
+            )
+            for line in result.stdout.splitlines():
+                if f":{port} " in line and "LISTENING" in line:
+                    parts = line.strip().split()
+                    pid = int(parts[-1])
+                    if pid == 0:
+                        continue
+                    sub = subprocess.run(
+                        ["taskkill", "/F", "/PID", str(pid)],
+                        capture_output=True, text=True,
+                    )
+                    if sub.returncode == 0:
+                        log.info(f"  Killed orphaned PID {pid} (was holding port {port})")
+                    else:
+                        log.warning(f"  Could not kill PID {pid}: {sub.stderr.strip()}")
+                    time.sleep(0.5)
+        else:
+            result = subprocess.run(
+                ["lsof", "-ti", f":{port}"], capture_output=True, text=True
+            )
+            for line in result.stdout.splitlines():
+                if line.strip().isdigit():
+                    pid = int(line.strip())
+                    if pid == os.getpid():
+                        continue
+                    os.kill(pid, signal.SIGTERM)
                     log.info(f"  Killed orphaned PID {pid} (was holding port {port})")
-                else:
-                    log.warning(f"  Could not kill PID {pid}: {sub.stderr.strip()}")
-                time.sleep(0.5)
+                    time.sleep(0.5)
     except Exception as exc:
         log.warning(f"  Port cleanup error for {port}: {exc}")
 

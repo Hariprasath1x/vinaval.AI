@@ -1,4 +1,4 @@
-"""
+r"""
 Book Seeding Script for Vinaval AI
 ====================================
 Pre-loads static TN textbook / syllabus content into ChromaDB.

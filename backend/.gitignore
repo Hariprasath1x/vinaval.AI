@@ -23,4 +23,6 @@ alembic/versions/*.pyc
 
 # SQLite databases — do not commit DB files
 *.db
-!vinavalai.db
+*.sqlite
+*.sqlite3
+

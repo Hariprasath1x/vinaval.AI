@@ -102,9 +102,19 @@ const fetchWithRetry = async (url, options) => {
 
 export const api = {
   get: async (endpoint, params = {}) => {
-    const url = new URL(`${BASE_URL}${endpoint}`);
-    Object.keys(params).forEach(key => url.searchParams.append(key, params[key]));
-    return fetchWithRetry(url, {
+    const fullUrl = `${BASE_URL}${endpoint}`;
+    const baseOrigin = typeof window !== 'undefined' && window.location ? window.location.origin : 'http://localhost';
+    const url = (fullUrl.startsWith('http://') || fullUrl.startsWith('https://'))
+      ? new URL(fullUrl)
+      : new URL(fullUrl, baseOrigin);
+
+    Object.keys(params).forEach(key => {
+      if (params[key] !== undefined && params[key] !== null) {
+        url.searchParams.append(key, params[key]);
+      }
+    });
+
+    return fetchWithRetry(url.toString(), {
       method: "GET",
       headers: getHeaders(),
     });

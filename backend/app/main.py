@@ -166,18 +166,23 @@ def create_app() -> FastAPI:
     app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
     # CORS — allow the Vite dev server, Streamlit dev server, and production frontend
+    frontend_origins = [
+        url.strip() for url in settings.FRONTEND_URL.split(",") if url.strip()
+    ]
+    allowed_origins = list(dict.fromkeys([
+        *frontend_origins,
+        "http://localhost:8501",
+        "http://127.0.0.1:8501",
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:5174",
+        "http://127.0.0.1:5174",
+        "http://localhost:3000",
+    ]))
+
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=[
-            settings.FRONTEND_URL,
-            "http://localhost:8501",
-            "http://127.0.0.1:8501",
-            "http://localhost:5173",
-            "http://127.0.0.1:5173",
-            "http://localhost:5174",
-            "http://127.0.0.1:5174",
-            "http://localhost:3000",
-        ],
+        allow_origins=allowed_origins,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],

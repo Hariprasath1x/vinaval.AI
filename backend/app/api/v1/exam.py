@@ -1,6 +1,9 @@
+from __future__ import annotations
 from typing import List
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
 from app.services.exam_service import ExamService
@@ -11,9 +14,9 @@ router = APIRouter(prefix="/exams", tags=["Examinations"])
 
 
 @router.get("", response_model=List[ExamSchema])
-async def list_exams(db: AsyncSession = Depends(get_db)):
+async def list_exams():
     """Return all supported exams with their subjects. No auth required."""
-    service = ExamService(db)
+    service = ExamService()
     return service.list_exams()
 
 
@@ -34,6 +37,5 @@ async def select_exam(
 @router.get("/me", response_model=ExamSelectionResponse)
 async def get_my_exam(current_user: User = Depends(get_current_user)):
     """Return the currently authenticated user's selected exam."""
-    from app.services.exam_service import ExamService
-    service = ExamService(None)  # no DB needed — data from user object
+    service = ExamService()
     return service.get_user_exam(current_user)
