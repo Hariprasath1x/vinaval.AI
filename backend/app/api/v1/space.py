@@ -174,6 +174,7 @@ async def chat(
                 active_doc_id=body.active_doc_id,
                 active_doc_filename=body.active_doc_filename,
                 chat_session_id=body.chat_session_id,
+                is_continuation=body.is_continuation,
             ):
                 if first_chunk:
                     elapsed = (time.perf_counter() - gen_start_time) * 1000

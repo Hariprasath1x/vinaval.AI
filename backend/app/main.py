@@ -165,6 +165,26 @@ def create_app() -> FastAPI:
     app.state.limiter = limiter
     app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
+    # Middleware to fix Firebase signInWithPopup Cross-Origin-Opener-Policy issue
+    # NOTE: This must be added BEFORE CORSMiddleware so that CORS runs first
+    # (Starlette processes middleware in reverse order of addition).
+    @app.middleware("http")
+    async def add_security_headers(request, call_next):
+        try:
+            response = await call_next(request)
+        except Exception:
+            # If call_next raises, return a plain 500 so CORS middleware can
+            # still attach its headers to the response.
+            import traceback, logging
+            logging.getLogger(__name__).error("Unhandled error in middleware chain:\n%s", traceback.format_exc())
+            from starlette.responses import JSONResponse
+            response = JSONResponse(
+                {"detail": "Internal Server Error"},
+                status_code=500,
+            )
+        response.headers["Cross-Origin-Opener-Policy"] = "same-origin-allow-popups"
+        return response
+
     # CORS — allow the Vite dev server, Streamlit dev server, and production frontend
     frontend_origins = [
         url.strip() for url in settings.FRONTEND_URL.split(",") if url.strip()
@@ -178,6 +198,9 @@ def create_app() -> FastAPI:
         "http://localhost:5174",
         "http://127.0.0.1:5174",
         "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:8000",
+        "http://127.0.0.1:8000",
     ]))
 
     app.add_middleware(
@@ -187,13 +210,6 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
-
-    # Middleware to fix Firebase signInWithPopup Cross-Origin-Opener-Policy issue
-    @app.middleware("http")
-    async def add_security_headers(request, call_next):
-        response = await call_next(request)
-        response.headers["Cross-Origin-Opener-Policy"] = "same-origin-allow-popups"
-        return response
 
     # Register all API routes
     app.include_router(api_v1_router)

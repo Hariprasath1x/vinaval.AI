@@ -11,6 +11,7 @@ class ChatSession(Base):
     space_id = Column(Integer, ForeignKey("learning_spaces.id", ondelete="CASCADE"), nullable=False, index=True)
     name = Column(String, nullable=False, default="New Chat")
     ai_suggested_name = Column(String, nullable=True)   # AI suggestion, user may override
+    state = Column(Text, nullable=True)                 # JSON string storing continuation state
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 

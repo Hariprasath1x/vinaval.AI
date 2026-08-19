@@ -116,6 +116,14 @@ class SpaceRepository:
         await self.db.commit()
         return True
 
+    async def update_chat_session_state(self, session_id: int, space_id: int, state: str) -> Optional[ChatSession]:
+        session = await self.get_chat_session(session_id, space_id)
+        if session:
+            session.state = state
+            await self.db.commit()
+            await self.db.refresh(session)
+        return session
+
 
     # ── Chat Messages ──────────────────────────────────────────────────────────
 

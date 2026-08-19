@@ -88,11 +88,8 @@ class SpaceService:
     async def suggest_session_name(
         self, session_id: int, space: LearningSpace, first_user_msg: str, first_ai_response: str
     ) -> str:
-        """Ask Groq to suggest a short 3-5 word title for this chat. Fire-and-forget friendly."""
-        from app.core.config import get_settings
-        from groq import AsyncGroq
-        settings = get_settings()
-        client = AsyncGroq(api_key=settings.GROQ_API_KEY)
+        """Ask AI to suggest a short 3-5 word title for this chat. Fire-and-forget friendly."""
+        from app.rag.chain import _llm_complete
 
         prompt = (
             f"Given this first exchange in a {space.exam_id} {space.subject} tutoring chat, "
@@ -103,17 +100,13 @@ class SpaceService:
         )
 
         try:
-            resp = await client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=20,
-                temperature=0.3,
-            )
-            suggestion = resp.choices[0].message.content.strip()
-            # Clean up quotes or newlines
-            suggestion = suggestion.strip('"\'').split('\n')[0][:60]
-            await self.repo.set_ai_suggested_name(session_id, suggestion)
-            return suggestion
+            suggestion = await _llm_complete(prompt, max_tokens=20, temperature=0.3)
+            if suggestion:
+                # Clean up quotes or newlines
+                suggestion = suggestion.strip('"\'').split('\n')[0][:60]
+                await self.repo.set_ai_suggested_name(session_id, suggestion)
+                return suggestion
+            return ""
         except Exception:
             return ""
 
@@ -138,6 +131,7 @@ class SpaceService:
         active_doc_id: Optional[int] = None,
         active_doc_filename: Optional[str] = None,
         chat_session_id: Optional[int] = None,
+        is_continuation: bool = False,
     ):
         """
         Generator: yields SSE-formatted chunks, then saves both messages to DB.
@@ -152,11 +146,28 @@ class SpaceService:
         history = [{"role": m.role, "content": m.content} for m in messages[-20:]]
         is_first_exchange = len(history) == 0
 
-        # Save user message
-        logger.info("[CHAT] Persisting user message")
-        msg = await self.repo.add_message(space.id, "user", user_message, session_id=chat_session_id)
-        msg_id = getattr(msg, 'id', 'unknown')
-        logger.info(f"[CHAT] User message persisted message_id={msg_id}")
+        # Fetch previous state if continuation is requested
+        previous_state = None
+        if is_continuation and chat_session_id:
+            logger.info("[CHAT] Continuation requested. Fetching previous state.")
+            chat_session = await self.repo.get_chat_session(chat_session_id, space.id)
+            if chat_session and chat_session.state:
+                import json
+                try:
+                    previous_state = json.loads(chat_session.state)
+                except Exception:
+                    pass
+
+        # Save user message (only if it's not a continuation signal like 'NEXT', or maybe we don't save NEXT at all to keep history clean)
+        # Wait, if the user explicitly typed "NEXT", we should just not persist it in the chat history, 
+        # so it looks seamless in the DB as well. The frontend will hide it anyway.
+        if is_continuation:
+            logger.info("[CHAT] Skipping persistence of continuation trigger message")
+        else:
+            logger.info("[CHAT] Persisting user message")
+            msg = await self.repo.add_message(space.id, "user", user_message, session_id=chat_session_id)
+            msg_id = getattr(msg, 'id', 'unknown')
+            logger.info(f"[CHAT] User message persisted message_id={msg_id}")
 
         logger.info("[CHAT] Starting RAG/LLM stream")
         # Stream AI response
@@ -170,14 +181,28 @@ class SpaceService:
             active_doc_id=active_doc_id,
             active_doc_filename=active_doc_filename,
             space_id=space.id,
+            previous_state=previous_state,
         ):
+            if chunk.startswith("[STATE_DUMP]") and chunk.endswith("[/STATE_DUMP]"):
+                if chat_session_id:
+                    state_json = chunk[12:-13]
+                    await self.repo.update_chat_session_state(chat_session_id, space.id, state_json)
+                continue
+                
             full_response.append(chunk)
             yield chunk
 
         full_text = "".join(full_response)
 
-        # Persist the complete assistant message
-        await self.repo.add_message(space.id, "assistant", full_text, session_id=chat_session_id)
+        # Persist the complete assistant message (or append if continuation)
+        if is_continuation and chat_session_id:
+            # For continuation, we could append to the previous message or just add a new assistant message.
+            # Adding a new assistant message is safer for streaming, the frontend can just join them.
+            # Or we can just let it be a new message bubble. The prompt asked:
+            # "The final displayed answer should appear as one continuous answer." -> handled by frontend
+            await self.repo.add_message(space.id, "assistant", full_text, session_id=chat_session_id)
+        else:
+            await self.repo.add_message(space.id, "assistant", full_text, session_id=chat_session_id)
 
         # After first exchange: generate AI name suggestion (non-blocking)
         if is_first_exchange and chat_session_id:

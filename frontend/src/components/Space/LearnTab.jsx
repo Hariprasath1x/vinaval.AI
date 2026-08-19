@@ -103,6 +103,8 @@ export default function LearnTab({ spaceId, space }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [canContinue, setCanContinue] = useState(false);
   const [showOptions, setShowOptions] = useState(false);
   const [chatLang, setChatLang] = useState('auto');
   const [aiSuggestion, setAiSuggestion] = useState(null);  // pending AI name suggestion
@@ -239,6 +241,7 @@ export default function LearnTab({ spaceId, space }) {
   const handleSelectSession = (sessionId) => {
     if (sessionId !== activeSessionId) {
       setActiveSessionId(sessionId);
+      setCanContinue(false);
     }
   };
 
@@ -253,6 +256,7 @@ export default function LearnTab({ spaceId, space }) {
 
     const userMessage = input.trim();
     setInput('');
+    setCanContinue(false);
     setMessages(prev => [...prev, { role: 'user', content: userMessage }]);
     setIsLoading(true);
     setMessages(prev => [...prev, { role: 'assistant', content: '' }]);
@@ -272,9 +276,16 @@ export default function LearnTab({ spaceId, space }) {
       let fullResponse = '';
       for await (const chunk of generator) {
         fullResponse += chunk;
+        
+        let displayResponse = fullResponse;
+        if (displayResponse.includes('[CONTINUE_AVAILABLE]')) {
+          setCanContinue(true);
+          displayResponse = displayResponse.replace('[CONTINUE_AVAILABLE]', '');
+        }
+
         setMessages(prev => {
           const msgs = [...prev];
-          msgs[msgs.length - 1] = { ...msgs[msgs.length - 1], content: fullResponse };
+          msgs[msgs.length - 1] = { ...msgs[msgs.length - 1], content: displayResponse };
           return msgs;
         });
       }
@@ -296,6 +307,55 @@ export default function LearnTab({ spaceId, space }) {
       setMessages(prev => {
         const msgs = [...prev];
         msgs[msgs.length - 1] = { ...msgs[msgs.length - 1], content: `❌ Error: ${err.message}` };
+        return msgs;
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // ── Continue Generation ───────────────────────────────────────────────────────
+  const handleContinue = async () => {
+    if (isLoading || !activeSessionId) return;
+    setCanContinue(false);
+    setIsLoading(true);
+
+    const payload = {
+      content: "NEXT",
+      lang: chatLang,
+      chat_session_id: activeSessionId,
+      is_continuation: true,
+    };
+    if (activeDoc) {
+      payload.active_doc_id = activeDoc.id;
+      payload.active_doc_filename = activeDoc.filename;
+    }
+
+    try {
+      const generator = api.streamPost(`/spaces/${spaceId}/chat`, payload);
+      let currentContent = messages[messages.length - 1].content;
+      let newChunkResponse = '';
+      
+      for await (const chunk of generator) {
+        newChunkResponse += chunk;
+        
+        // Using regex to remove multiple tags if any, but replace is fine
+        let displayResponse = currentContent + '\n\n' + newChunkResponse;
+        if (displayResponse.includes('[CONTINUE_AVAILABLE]')) {
+          setCanContinue(true);
+          displayResponse = displayResponse.replace('[CONTINUE_AVAILABLE]', '');
+        }
+
+        setMessages(prev => {
+          const msgs = [...prev];
+          msgs[msgs.length - 1] = { ...msgs[msgs.length - 1], content: displayResponse };
+          return msgs;
+        });
+      }
+    } catch (err) {
+      setMessages(prev => {
+        const msgs = [...prev];
+        msgs[msgs.length - 1] = { ...msgs[msgs.length - 1], content: msgs[msgs.length - 1].content + `\n\n❌ Error: ${err.message}` };
         return msgs;
       });
     } finally {
@@ -479,6 +539,13 @@ export default function LearnTab({ spaceId, space }) {
 
             {/* Input */}
             <div className="chat-input-wrapper">
+              {canContinue && (
+                <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '1rem' }}>
+                  <button className="btn-primary" onClick={handleContinue} disabled={isLoading} style={{ borderRadius: '20px', padding: '8px 24px' }}>
+                    Continue →
+                  </button>
+                </div>
+              )}
               <div className="chat-input-container">
                 <textarea
                   placeholder={activeDoc ? `Ask about '${activeDoc.filename}'...` : 'Ask your AI tutor...'}

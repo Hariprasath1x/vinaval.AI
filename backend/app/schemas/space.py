@@ -51,6 +51,7 @@ class MessageCreate(BaseModel):
     active_doc_id: Optional[int] = None           # doc_id of the active uploaded file
     active_doc_filename: Optional[str] = None     # filename for display in system prompt
     chat_session_id: Optional[int] = None         # scoped chat session
+    is_continuation: bool = False                 # Flag to indicate resuming a previous response
 
 
 class MessageOut(BaseModel):

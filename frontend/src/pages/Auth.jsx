@@ -33,7 +33,7 @@ export default function Auth() {
 
   const handleGoogleSignIn = () => {
     const returnUrl = window.location.origin;
-    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
+    const apiUrl = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000/api/v1';
     let backendUrl = apiUrl.replace(/\/api\/v1\/?$/, '');
     if (!backendUrl.startsWith('http://') && !backendUrl.startsWith('https://')) {
       backendUrl = `${window.location.origin}${backendUrl.startsWith('/') ? '' : '/'}${backendUrl}`.replace(/\/$/, '');

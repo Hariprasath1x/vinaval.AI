@@ -1,7 +1,13 @@
+import os
 from pydantic_settings import BaseSettings
 from functools import lru_cache
 from typing import Optional
+from dotenv import load_dotenv
 
+# Explicitly load the backend/.env file from its absolute path
+_backend_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_env_path = os.path.join(_backend_dir, ".env")
+load_dotenv(dotenv_path=_env_path)
 
 class Settings(BaseSettings):
     APP_NAME: str = "VinavalAI"
@@ -19,13 +25,9 @@ class Settings(BaseSettings):
     # Firebase Admin SDK
     FIREBASE_SERVICE_ACCOUNT_PATH: str = "./firebase-service-account.json"
 
-    # Groq
-    GROQ_API_KEY: str
-    GROQ_MODEL: str = "llama-3.3-70b-versatile"
-
     # Gemini
     GEMINI_API_KEY: Optional[str] = None
-    GEMINI_MODEL: str = "gemini-1.5-flash"
+    GEMINI_MODEL: str = "gemini-3.6-flash"
 
     # ChromaDB — must match the directory where chroma_db/ was pre-built
     CHROMA_PERSIST_DIR: str = "./chroma_db"
