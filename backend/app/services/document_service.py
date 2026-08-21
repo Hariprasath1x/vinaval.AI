@@ -184,6 +184,8 @@ class DocumentService:
         exam: str,
         subject: str,
         doc_id: int,
+        space_id: int,
+        material_type: str | None = None,
     ) -> Dict[str, Any]:
         """
         Full pipeline:
@@ -246,13 +248,15 @@ class DocumentService:
         ids = [f"{doc_id}_{c['chunk_index']}_{uuid.uuid4().hex[:8]}" for c in chunk_dicts]
         metadatas = [
             {
-                "source":      "user_upload",
-                "exam":        exam,
-                "subject":     subject,
-                "lang":        lang,
-                "book_title":  filename,
-                "doc_id":      doc_id,
-                "chunk_index": c["chunk_index"],
+                "source":        "user_upload",
+                "material_type": material_type or "",
+                "exam":          exam,
+                "subject":       subject,
+                "lang":          lang,
+                "book_title":    filename,
+                "doc_id":        doc_id,
+                "space_id":      space_id,
+                "chunk_index":   c["chunk_index"],
                 "topic":       c.get("topic", ""),
             }
             for c in chunk_dicts

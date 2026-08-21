@@ -8,12 +8,14 @@ import {
   ClipboardCheck, 
   BarChart2, 
   ArrowLeft,
-  BookOpen
+  BookOpen,
+  Bot
 } from 'lucide-react';
 import './Space.css';
 
 // Import Tabs
 import LearnTab from '../components/Space/LearnTab';
+import MyStudyGptTab from '../components/Space/MyStudyGptTab';
 import MaterialsTab from '../components/Space/MaterialsTab';
 import FlashcardsTab from '../components/Space/FlashcardsTab';
 import ExamLabTab from '../components/Space/ExamLabTab';
@@ -59,12 +61,14 @@ export default function Space() {
     switch (activeTab) {
       case 'learn':
         return <LearnTab spaceId={spaceId} space={space} />;
+      case 'mystudygpt':
+        return <MyStudyGptTab spaceId={spaceId} space={space} />;
       case 'materials':
         return <MaterialsTab spaceId={spaceId} space={space} onTabChange={setActiveTab} />;
       case 'flashcards':
         return <FlashcardsTab spaceId={spaceId} space={space} />;
       case 'examlab':
-        return <ExamLabTab spaceId={spaceId} space={space} />;
+        return <ExamLabTab spaceId={spaceId} space={space} onTabChange={setActiveTab} />;
       case 'reports':
         return <ReportsTab spaceId={spaceId} space={space} />;
       default:
@@ -92,6 +96,14 @@ export default function Space() {
           >
             <MessageSquare size={18} />
             AI Tutor
+          </button>
+          
+          <button 
+            className={`nav-item ${activeTab === 'mystudygpt' ? 'active' : ''}`}
+            onClick={() => setActiveTab('mystudygpt')}
+          >
+            <Bot size={18} />
+            My Study GPT
           </button>
           
           <button 

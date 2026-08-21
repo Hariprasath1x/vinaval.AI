@@ -36,7 +36,7 @@ class QuizRepository:
 
     # ── Sessions ───────────────────────────────────────────────────────────────
 
-    async def create_session(self, space_id: int, topic: Optional[str], total_questions: int, is_exam: bool, lang: str) -> "QuizSession":
+    async def create_session(self, space_id: int, topic: Optional[str], total_questions: int, is_exam: bool, lang: str, source_type: str = "curriculum") -> "QuizSession":
         from app.models.quiz import QuizSession
         session = QuizSession(
             space_id=space_id,
@@ -44,6 +44,7 @@ class QuizRepository:
             total_questions=total_questions,
             is_exam=is_exam,
             lang=lang,
+            source_type=source_type,
         )
         self.db.add(session)
         await self.db.commit()

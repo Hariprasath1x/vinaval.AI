@@ -2,7 +2,7 @@ import json
 import os
 import tempfile
 
-from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, status
+from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
@@ -20,6 +20,7 @@ router = APIRouter(prefix="/spaces", tags=["Documents"])
 async def upload_document(
     space_id: int,
     file: UploadFile = File(...),
+    material_type: str = Form(None),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -57,6 +58,7 @@ async def upload_document(
         filename=file.filename,
         file_type=ext[1:],
         source="user_upload",
+        material_type=material_type,
     )
     db.add(new_doc)
     await db.commit()
@@ -71,7 +73,7 @@ async def upload_document(
         # Process, extract topics, create semantic chunks, index into Chroma
         doc_svc = DocumentService()
         stats = await doc_svc.process_and_index_document(
-            tmp_path, space.exam_id, space.subject, new_doc.id
+            tmp_path, space.exam_id, space.subject, new_doc.id, space_id, material_type
         )
     except Exception as e:
         # Rollback DB if indexing fails
@@ -99,6 +101,7 @@ async def upload_document(
         "filename":    new_doc.filename,
         "file_type":   new_doc.file_type,
         "source":      new_doc.source,
+        "material_type": new_doc.material_type,
         "pages":       stats["pages"],
         "chunk_count": stats["chunk_count"],
         "topics":      stats["topics"],
@@ -125,6 +128,7 @@ async def list_documents(
             "filename":    d.filename,
             "file_type":   d.file_type,
             "source":      d.source,
+            "material_type": d.material_type,
             "chunk_count": d.chunk_count,
             "topics":      json.loads(d.topics) if d.topics else [],
             "created_at":  d.created_at,

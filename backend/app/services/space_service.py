@@ -132,6 +132,7 @@ class SpaceService:
         active_doc_filename: Optional[str] = None,
         chat_session_id: Optional[int] = None,
         is_continuation: bool = False,
+        mode: str = "ai_tutor",
     ):
         """
         Generator: yields SSE-formatted chunks, then saves both messages to DB.
@@ -182,6 +183,7 @@ class SpaceService:
             active_doc_filename=active_doc_filename,
             space_id=space.id,
             previous_state=previous_state,
+            mode=mode,
         ):
             if chunk.startswith("[STATE_DUMP]") and chunk.endswith("[/STATE_DUMP]"):
                 if chat_session_id:

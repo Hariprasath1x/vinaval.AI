@@ -29,6 +29,10 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: Optional[str] = None
     GEMINI_MODEL: str = "gemini-3.6-flash"
 
+    # Groq Fallback
+    GROQ_API_KEY: Optional[str] = None
+    GROQ_MODEL: str = "llama3-70b-8192"
+
     # ChromaDB — must match the directory where chroma_db/ was pre-built
     CHROMA_PERSIST_DIR: str = "./chroma_db"
 

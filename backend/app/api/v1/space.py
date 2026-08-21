@@ -157,6 +157,7 @@ async def chat(
     logger.info(f"[CHAT] language={body.lang}")
     logger.info(f"[CHAT] active_doc_id={body.active_doc_id}")
     logger.info(f"[CHAT] chat_session_id={body.chat_session_id}")
+    logger.info(f"[CHAT] mode={body.mode}")
     logger.info("[CHAT] User authenticated successfully")
 
     space = await service.get_space(space_id, current_user.id)
@@ -175,6 +176,7 @@ async def chat(
                 active_doc_filename=body.active_doc_filename,
                 chat_session_id=body.chat_session_id,
                 is_continuation=body.is_continuation,
+                mode=body.mode,
             ):
                 if first_chunk:
                     elapsed = (time.perf_counter() - gen_start_time) * 1000

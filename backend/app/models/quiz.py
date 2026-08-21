@@ -10,6 +10,7 @@ class QuizQuestion(Base):
     id = Column(Integer, primary_key=True, index=True)
     space_id = Column(Integer, ForeignKey("learning_spaces.id", ondelete="CASCADE"), nullable=False, index=True)
     topic = Column(String, nullable=False)             # e.g. "Newton's Laws"
+    source_type = Column(String, nullable=False, server_default="curriculum")  # "curriculum" or "user"
     question = Column(Text, nullable=False)
     option_a = Column(Text, nullable=False)
     option_b = Column(Text, nullable=False)
@@ -29,6 +30,7 @@ class QuizSession(Base):
     id = Column(Integer, primary_key=True, index=True)
     space_id = Column(Integer, ForeignKey("learning_spaces.id", ondelete="CASCADE"), nullable=False, index=True)
     topic = Column(String, nullable=True)               # None means full syllabus
+    source_type = Column(String, nullable=False, server_default="curriculum")  # "curriculum" or "user"
     total_questions = Column(Integer, nullable=False)
     correct_answers = Column(Integer, nullable=False, default=0)
     score_pct = Column(Integer, nullable=False, default=0)

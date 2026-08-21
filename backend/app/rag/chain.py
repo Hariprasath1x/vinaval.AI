@@ -40,8 +40,6 @@ import logging
 import re as _re
 import time
 from typing import AsyncGenerator, List, Dict, Tuple, Optional
-
-from typing import AsyncGenerator, List, Dict, Tuple, Optional
 import google.generativeai as genai
 from app.core.config import get_settings
 
@@ -81,8 +79,31 @@ async def _llm_complete(
                 logger.info("[LLM] Gemini completion succeeded")
                 return text
         except Exception as e:
-            logger.error(f"[LLM] Gemini completion failed: {e}")
-            raise ValueError(f"LLM completion failed: {e}")
+            logger.error(f"[LLM] Gemini completion failed: {e}. Falling back to Groq.")
+            if settings.GROQ_API_KEY:
+                try:
+                    from groq import AsyncGroq
+                    client = AsyncGroq(api_key=settings.GROQ_API_KEY)
+                    messages = []
+                    if system_instruction:
+                        messages.append({"role": "system", "content": system_instruction})
+                    messages.append({"role": "user", "content": prompt})
+                    chat_completion = await client.chat.completions.create(
+                        messages=messages,
+                        model=settings.GROQ_MODEL,
+                        temperature=temperature,
+                        max_tokens=max_tokens,
+                    )
+                    text = chat_completion.choices[0].message.content
+                    if text:
+                        logger.info("[LLM] Groq completion succeeded")
+                        return text
+                    return ""
+                except Exception as groq_e:
+                    logger.error(f"[LLM] Groq fallback failed: {groq_e}")
+                    raise ValueError(f"LLM completion failed for both Gemini and Groq")
+            else:
+                raise ValueError(f"LLM completion failed: {e}")
     else:
         raise ValueError("No GEMINI_API_KEY configured on the server.")
 
@@ -148,15 +169,6 @@ def classify_intent(message: str) -> str:
 
 # ── System Prompts ────────────────────────────────────────────────────────────
 
-CONTINUATION_RULE = """
-MOST IMPORTANT:
-If the answer is long, NEVER abruptly stop because of the response-length limit.
-Generate the answer in logical sections.
-If the complete answer cannot safely fit into the current response, finish the current logical section and return exactly this continuation marker on a new line:
-[CONTINUE_AVAILABLE]
-Do not stop in the middle of a sentence, paragraph, table, explanation, bullet point, or code block.
-When continuation is requested, continue from exactly where you stopped without repeating completed content.
-"""
 
 FALLBACK_SYSTEM_PROMPT = """\
 {lang_enforcement}\
@@ -180,7 +192,6 @@ Rules:
 11. Do not unnecessarily repeat the user's question.
 12. Do not provide excessively verbose explanations when a concise answer is sufficient.
 
-{continuation_rule}
 
 ### Language (IMPORTANT):
 {lang_block}
@@ -204,7 +215,9 @@ You are NOT a chatbot that gives one-liner answers. You are a passionate teacher
 - **Connects topics** — After answering, suggest 1-2 related topics or chapters the student should revise next.
 - **Encourages** — Be warm, patient, and motivating. Celebrate progress.
 
-### Response Length:
+### Response Length Constraints (CRITICAL):
+- **Never cut off your response abruptly.** Always wrap up your explanation logically within a reasonable length.
+- If you cannot fit the full answer into a single, comprehensive response, provide a high-level summary and focus only on the most critical concepts rather than trailing off.
 - For a simple factual question ("What is osmosis?"): 2-3 paragraphs + 1 real example.
 - For a concept question ("Explain Newton's Laws"): Full structured explanation, 4-6 paragraphs, with examples, equations, and a summary table.
 - For a "how to solve" question: Step-by-step worked solution with all intermediate steps shown.
@@ -222,7 +235,6 @@ You are a deeply knowledgeable, warm, and motivating teacher. \
 Your mission is to help every student — Tamil medium or English medium — \
 fully master {subject} and crack {exam} with confidence!
 
-{continuation_rule}
 """
 
 # System prompt used when active file context is set — stricter grounding
@@ -240,6 +252,7 @@ Subject: {exam} → {subject}
    "The uploaded document does not contain details about [topic]. Here is what I know from the syllabus: ..."
    — then provide a brief general answer. Never hallucinate silently.
 4. Always attribute your answer to the uploaded document when using it.
+5. NEVER cut off your response abruptly. Always wrap up your explanation logically within a reasonable length. If you cannot fit the full answer, summarize it instead of trailing off.
 
 ### Language:
 {lang_block}
@@ -247,7 +260,6 @@ Subject: {exam} → {subject}
 {context_block}
 Be warm, structured, and thorough.
 
-{continuation_rule}
 """
 
 EXAM_TAGS = {
@@ -330,6 +342,84 @@ def _retrieve_syllabus_context(exam: str, subject: str, query: str, n_results: i
 
     except Exception as exc:
         logger.error("ChromaDB retrieval failed: %s", exc)
+        raise RAGSystemError("Retrieval system error") from exc
+
+
+# ── RAG Retrieval — User RAG (My Study GPT) ──────────────────────────────────
+
+def _retrieve_user_context(
+    exam: str, subject: str, query: str, space_id: int, n_results: int = 5
+) -> Tuple[str, int]:
+    """
+    Semantic search restricted to a student's personal learning space (User RAG).
+    Only returns chunks from documents uploaded by the user to this specific space.
+    """
+    try:
+        from app.core.vector_store import get_vector_store
+
+        logger.info(f"[RAG] Looking up user collections exam={exam} subject={subject} space_id={space_id}")
+        start_lookup = time.perf_counter()
+        collections = get_vector_store().get_collections_for_subject(exam, subject)
+        _ = (time.perf_counter() - start_lookup) * 1000
+
+        if not collections:
+            return "", 0
+
+        all_docs: List[str] = []
+        all_metas: List[dict] = []
+        seen: set = set()
+
+        for col in collections:
+            try:
+                k = min(max(2, n_results), col.count())
+                if k == 0:
+                    continue
+
+                # We query for space_id and source = user_upload
+                # Note: If the vector provider doesn't support $and perfectly, we filter in memory too
+                results = col.query(
+                    query_texts=[query],
+                    n_results=k * 2, # fetch extra to account for manual filtering
+                    where={"space_id": space_id}
+                )
+                docs = results.get("documents", [[]])[0]
+                metas = results.get("metadatas", [[]])[0]
+                
+                for doc, meta in zip(docs, metas):
+                    if meta.get("space_id") != space_id or meta.get("source") != "user_upload":
+                        continue
+                        
+                    key = doc[:120]
+                    if key not in seen:
+                        seen.add(key)
+                        all_docs.append(doc)
+                        all_metas.append(meta)
+            except Exception as exc:
+                logger.warning("User-filtered retrieval error on %s: %s", col.name, exc)
+
+        if not all_docs:
+            return "", 0
+
+        # Sort by relevance roughly (since we interleaved multiple collections, we just take the top N we gathered)
+        all_docs = all_docs[:n_results]
+        all_metas = all_metas[:n_results]
+
+        lines = ["### Context from Your Study Materials:\n"]
+        for doc, meta in zip(all_docs, all_metas):
+            topic = meta.get("topic", "")
+            mat_type = meta.get("material_type", "")
+            label = f"[{mat_type} - {topic}]" if topic else f"[{mat_type}]"
+            lines.append(f"**{label}** {doc.strip()}\n")
+
+        lines.append(
+            "\nUse ONLY the above context to answer. "
+            "If the question is not covered by the context, state clearly that "
+            "the user's materials do not contain the answer.\n"
+        )
+        return "\n".join(lines) + "\n", len(all_docs)
+
+    except Exception as exc:
+        logger.error("User context retrieval failed: %s", exc)
         raise RAGSystemError("Retrieval system error") from exc
 
 
@@ -557,7 +647,6 @@ def _build_system_prompt(
             subject=subject,
             lang_block=lang_block,
             lang_enforcement=lang_enforcement,
-            continuation_rule=CONTINUATION_RULE,
         )
 
     if filename:
@@ -568,7 +657,6 @@ def _build_system_prompt(
             lang_block=lang_block,
             lang_enforcement=lang_enforcement,
             context_block=context_block,
-            continuation_rule=CONTINUATION_RULE,
         )
 
     return SYSTEM_PROMPT.format(
@@ -578,7 +666,6 @@ def _build_system_prompt(
         lang_block=lang_block,
         lang_enforcement=lang_enforcement,
         context_block=context_block,
-        continuation_rule=CONTINUATION_RULE,
     )
 
 
@@ -594,6 +681,7 @@ async def stream_chat(
     active_doc_filename: Optional[str] = None,
     space_id: Optional[int] = None,
     previous_state: Optional[Dict] = None,
+    mode: str = "ai_tutor",
 ) -> AsyncGenerator[str, None]:
     """
     Stream an AI response token-by-token using Groq's async client.
@@ -619,10 +707,12 @@ async def stream_chat(
         n_chunks = 0
         n_topics = 0
         filename = active_doc_filename
-        mode = "rag"
-
         try:
-            if active_doc_id:
+            if mode == "my_study_gpt" and space_id:
+                intent = "QUESTION"
+                logger.info(f"[RAG] Mode: My Study GPT, querying user space_id={space_id}")
+                context_block, n_chunks = _retrieve_user_context(exam, subject, user_message, space_id, n_results=5)
+            elif active_doc_id:
                 if intent == "LIST_TOPICS":
                     topics = _get_topics_from_metadata(exam, subject, active_doc_id)
                     n_topics = len(topics)
@@ -643,11 +733,11 @@ async def stream_chat(
                 intent = "QUESTION"
                 context_block, n_chunks = _retrieve_syllabus_context(exam, subject, user_message, n_results=4)
                 
-            if n_chunks == 0 and intent == "QUESTION" and not active_doc_id:
+            if n_chunks == 0 and intent == "QUESTION" and not active_doc_id and mode != "my_study_gpt":
                 # No chunks retrieved - switch to Fallback mode
                 mode = "fallback"
                 
-        except RAGSystemError as e:
+        except RAGSystemError:
             # If ChromaDB fails entirely, yield a friendly error message and stop.
             yield "I'm having trouble accessing my textbook knowledge base right now. Please try again in a moment."
             return
@@ -682,9 +772,10 @@ async def stream_chat(
     # Keep only the last 6 messages (3 turns)
     recent_history = history[-6:] if history else []
 
-    # Use higher token budget for full-doc operations, but keep it safe for 12k TPM limits
-    max_tokens = 3000 if intent in ("EXPLAIN_DOCUMENT", "SUMMARIZE_DOCUMENT",
-                                     "GENERATE_NOTES") else 1500
+    # Use higher token budget for full-doc operations, but keep it safe for API limits.
+    # We increase this from 3000 to 6000 to prevent abrupt cutoffs, while relying on system prompts for conciseness.
+    max_tokens = 6000 if intent in ("EXPLAIN_DOCUMENT", "SUMMARIZE_DOCUMENT",
+                                     "GENERATE_NOTES") else 3000
 
     if settings.GEMINI_API_KEY:
         try:
@@ -726,8 +817,48 @@ async def stream_chat(
             return
 
         except Exception as e:
-            logger.exception(f"[LLM] Gemini API failed exception_type={type(e).__name__}")
-            yield "Error: An unexpected error occurred while communicating with the LLM."
+            logger.exception(f"[LLM] Gemini API failed exception_type={type(e).__name__}. Falling back to Groq.")
+            if settings.GROQ_API_KEY:
+                try:
+                    from groq import AsyncGroq
+                    client = AsyncGroq(api_key=settings.GROQ_API_KEY)
+                    messages = []
+                    if system_prompt:
+                        messages.append({"role": "system", "content": system_prompt})
+                    
+                    for msg in recent_history:
+                        role = "assistant" if msg["role"] == "assistant" else "user"
+                        messages.append({"role": role, "content": msg["content"]})
+                    messages.append({"role": "user", "content": user_message})
+
+                    logger.info(f"[LLM] provider=groq model={settings.GROQ_MODEL}")
+                    llm_start = time.perf_counter()
+                    
+                    stream = await client.chat.completions.create(
+                        messages=messages,
+                        model=settings.GROQ_MODEL,
+                        temperature=0.7,
+                        max_tokens=max_tokens,
+                        stream=True,
+                    )
+                    
+                    first_chunk = True
+                    async for chunk in stream:
+                        if first_chunk:
+                            first_elapsed = (time.perf_counter() - llm_start) * 1000
+                            logger.info(f"[LLM] First response chunk received (Groq) elapsed_ms={first_elapsed:.2f}")
+                            first_chunk = False
+                        if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
+                            yield chunk.choices[0].delta.content
+
+                    llm_elapsed = (time.perf_counter() - llm_start) * 1000
+                    logger.info(f"[LLM] LLM stream completed (Groq) elapsed_ms={llm_elapsed:.2f}")
+                    return
+                except Exception as groq_e:
+                    logger.exception(f"[LLM] Groq API fallback failed exception_type={type(groq_e).__name__}")
+                    yield "Error: An unexpected error occurred while communicating with the LLMs."
+            else:
+                yield "Error: An unexpected error occurred while communicating with the LLM."
     else:
         logger.error("[LLM] No GEMINI_API_KEY configured.")
         yield "Error: No API key configured on the server."
@@ -801,12 +932,23 @@ async def generate_mcqs(
     topic: Optional[str] = None,
     count: int = 5,
     lang: str = "en",
+    source_type: str = "curriculum",
+    space_id: Optional[int] = None,
 ) -> List[Dict]:
     """
     Generate MCQ questions using Groq, grounded in ChromaDB context.
     """
     search_query = topic if topic else f"{exam} {subject} syllabus overview"
-    context_block, _ = _retrieve_syllabus_context(exam, subject, search_query, n_results=5 if not topic else 3)
+    
+    if source_type == "user" and space_id:
+        context_block, chunk_count = _retrieve_user_context(exam, subject, search_query, space_id, n_results=5 if not topic else 3)
+        if chunk_count > 0 and len(context_block) < 500:
+            # Augment with curriculum if user context is very sparse (e.g. just topic names)
+            syl_context, _ = _retrieve_syllabus_context(exam, subject, search_query, n_results=2)
+            context_block += "\n\n### Additional Reference Material:\n" + syl_context
+    else:
+        context_block, _ = _retrieve_syllabus_context(exam, subject, search_query, n_results=5 if not topic else 3)
+        
     if context_block:
         if len(context_block) > 15000:
             context_block = context_block[:15000] + "\n...[truncated]"

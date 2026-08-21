@@ -36,6 +36,8 @@ class QuizService:
                 topic=req.topic,
                 count=count,
                 lang=getattr(req, "lang", "en"),
+                source_type=getattr(req, "source_type", "curriculum"),
+                space_id=space.id,
             )
         except ValueError as e:
             raise HTTPException(
@@ -62,6 +64,7 @@ class QuizService:
                     option_d=q["option_d"],
                     correct_option=q["correct_option"].lower(),
                     explanation=q.get("explanation"),
+                    source_type=getattr(req, "source_type", "curriculum"),
                 )
             )
 
@@ -79,7 +82,8 @@ class QuizService:
             topic=req.topic,
             total_questions=len(saved_questions),
             is_exam=(req.topic is None),
-            lang=lang
+            lang=lang,
+            source_type=getattr(req, "source_type", "curriculum"),
         )
 
         return {

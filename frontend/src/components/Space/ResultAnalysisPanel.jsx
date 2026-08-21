@@ -4,7 +4,7 @@ import ReactMarkdown from 'react-markdown';
 import './ResultAnalysisPanel.css';
 import { api } from '../../services/api';
 
-export default function ResultAnalysisPanel({ analysis, spaceId, onBack }) {
+export default function ResultAnalysisPanel({ analysis, spaceId, onBack, onReviseTopic }) {
   if (!analysis) return null;
 
   const {
@@ -128,6 +128,15 @@ export default function ResultAnalysisPanel({ analysis, spaceId, onBack }) {
                 <div className="p-details">
                   <h5>{area.name}</h5>
                   <p>Accuracy: {Math.round(area.accuracy)}%</p>
+                  {onReviseTopic && (
+                    <button 
+                      className="btn-secondary" 
+                      style={{ marginTop: '0.5rem', fontSize: '0.8rem', padding: '0.3rem 0.6rem' }}
+                      onClick={() => onReviseTopic(area.name)}
+                    >
+                      <Bot size={12} /> Revise with My Study GPT
+                    </button>
+                  )}
                 </div>
               </div>
             ))}

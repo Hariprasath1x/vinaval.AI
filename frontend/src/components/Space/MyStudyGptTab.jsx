@@ -97,7 +97,7 @@ function AiNameSuggestion({ suggestion, onAccept, onDismiss }) {
 }
 
 // ── Main LearnTab ──────────────────────────────────────────────────────────────
-export default function LearnTab({ spaceId, space }) {
+export default function MyStudyGptTab({ spaceId, space }) {
   const [sessions, setSessions] = useState([]);
   const [activeSessionId, setActiveSessionId] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -265,6 +265,7 @@ export default function LearnTab({ spaceId, space }) {
       content: userMessage,
       lang: chatLang,
       chat_session_id: activeSessionId,
+      mode: 'my_study_gpt',
     };
     if (activeDoc) {
       payload.active_doc_id = activeDoc.id;
@@ -325,6 +326,7 @@ export default function LearnTab({ spaceId, space }) {
       lang: chatLang,
       chat_session_id: activeSessionId,
       is_continuation: true,
+      mode: 'my_study_gpt',
     };
     if (activeDoc) {
       payload.active_doc_id = activeDoc.id;
@@ -439,8 +441,8 @@ export default function LearnTab({ spaceId, space }) {
           <div className="learn-header-left">
             <Bot size={22} />
             <div>
-              <h2>{activeSession ? activeSession.name : 'AI Tutor'}</h2>
-              <p>Ask anything about {space?.subject}.</p>
+              <h2>{activeSession ? activeSession.name : 'My Study GPT'}</h2>
+              <p>Ask anything about your uploaded {space?.subject} materials.</p>
             </div>
           </div>
           <button className="btn-new-chat-top" onClick={handleNewChat} title="New Chat">
@@ -475,7 +477,7 @@ export default function LearnTab({ spaceId, space }) {
           </div>
         ) : (
           <p className="syllabus-note">
-            📚 <strong>Using:</strong> Pre-loaded syllabus books. Upload a document in <strong>Materials</strong> to focus AI on your notes.
+            📚 <strong>My Study GPT:</strong> Answers will ONLY be generated from your uploaded materials in the Materials tab.
           </p>
         )}
 
@@ -554,7 +556,7 @@ export default function LearnTab({ spaceId, space }) {
               )}
               <div className="chat-input-container">
                 <textarea
-                  placeholder={activeDoc ? `Ask about '${activeDoc.filename}'...` : 'Ask your AI tutor...'}
+                  placeholder={activeDoc ? `Ask about '${activeDoc.filename}'...` : 'Ask My Study GPT...'}
                   value={input}
                   onChange={e => setInput(e.target.value)}
                   onKeyDown={handleKeyDown}

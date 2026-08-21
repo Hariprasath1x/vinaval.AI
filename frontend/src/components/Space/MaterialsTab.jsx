@@ -8,6 +8,7 @@ export default function MaterialsTab({ spaceId, onTabChange }) {
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [file, setFile] = useState(null);
+  const [materialType, setMaterialType] = useState('Important Topics');
   const [uploadResult, setUploadResult] = useState(null);
 
   const loadDocuments = async () => {
@@ -34,6 +35,7 @@ export default function MaterialsTab({ spaceId, onTabChange }) {
 
     const formData = new FormData();
     formData.append('file', file);
+    formData.append('material_type', materialType);
 
     try {
       const result = await api.post(`/spaces/${spaceId}/documents`, formData, false);
@@ -114,6 +116,20 @@ export default function MaterialsTab({ spaceId, onTabChange }) {
                 <span>Click or drag a PDF/TXT file here</span>
               )}
             </div>
+          </div>
+          
+          <div className="form-group" style={{ marginBottom: '1rem', textAlign: 'left' }}>
+            <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>Material Type</label>
+            <select 
+              value={materialType} 
+              onChange={(e) => setMaterialType(e.target.value)}
+              style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border)' }}
+            >
+              <option value="Important Topics">Important Topics</option>
+              <option value="Question Banks">Question Banks</option>
+              <option value="Important Questions">Important Questions</option>
+              <option value="Notes">Notes</option>
+            </select>
           </div>
           
           <button 

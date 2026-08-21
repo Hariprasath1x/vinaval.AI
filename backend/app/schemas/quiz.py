@@ -22,8 +22,10 @@ class QuestionOut(BaseModel):
 
 class GenerateQuestionsRequest(BaseModel):
     topic: Optional[str] = None
-    count: int = 5   # 1–30
-    lang: str = "en"  # "en" (English) or "ta" (Tamil)
+    count: int = 5
+    lang: str = "en"
+    source_type: str = "curriculum"
+    material_type: Optional[str] = None  # "en" (English) or "ta" (Tamil)
 
 
 class GenerateQuestionsResponse(BaseModel):
@@ -40,14 +42,13 @@ class SubmitAnswerRequest(BaseModel):
 
 class QuizSessionOut(BaseModel):
     id: int
-    space_id: int
-    topic: Optional[str]
+    topic: Optional[str] = None
     total_questions: int
     correct_answers: int
     score_pct: int
     is_exam: bool
-    lang: str
     is_completed: bool
+    source_type: str
     created_at: datetime
 
     model_config = {"from_attributes": True}

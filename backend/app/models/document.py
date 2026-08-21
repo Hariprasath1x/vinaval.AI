@@ -18,6 +18,8 @@ class SpaceDocument(Base):
     # "user_upload" = question bank / notes uploaded by student
     # "book" = static syllabus seeded by admin (not user-deletable from UI)
     source: Mapped[str] = mapped_column(String, nullable=False, default="user_upload")
+    # e.g., "Important Topics", "Question Banks", "Important Questions", "Notes"
+    material_type: Mapped[str] = mapped_column(String, nullable=True, default=None)
     # JSON-serialised list of extracted headings/topics e.g. '["Surface Chemistry","Adsorption"]'
     topics: Mapped[str] = mapped_column(Text, nullable=True, default=None)
     # Number of semantic chunks indexed into ChromaDB

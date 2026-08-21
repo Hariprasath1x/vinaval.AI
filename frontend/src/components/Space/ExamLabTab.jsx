@@ -8,8 +8,9 @@ import './ExamLabTab.css';
 
 const MOCK_EXAM_DURATION_SECONDS = 15 * 60; // 15 mins
 
-export default function ExamLabTab({ spaceId, space }) {
+export default function ExamLabTab({ spaceId, space, onTabChange }) {
   const [isExamMode, setIsExamMode] = useState(false);
+  const [sourceType, setSourceType] = useState('curriculum'); // 'curriculum' | 'user'
   const [topicChoice, setTopicChoice] = useState('');
   const [customTopic, setCustomTopic] = useState('');
   const [count, setCount] = useState(5);
@@ -34,13 +35,36 @@ export default function ExamLabTab({ spaceId, space }) {
   const [analyzing, setAnalyzing] = useState(false);
   const [showAnalysis, setShowAnalysis] = useState(false);
 
+  const [userTopics, setUserTopics] = useState([]);
+  
   const availTopics = React.useMemo(() => space ? getTopics(space.subject) : [], [space]);
   
+  // Fetch user topics
   useEffect(() => {
-    if (availTopics.length > 0) {
-      setTopicChoice(availTopics[0]);
+    const fetchUserDocs = async () => {
+      try {
+        const data = await api.get(`/spaces/${spaceId}/documents`);
+        const topics = new Set();
+        data.forEach(d => {
+          if (d.topics && Array.isArray(d.topics)) {
+            d.topics.forEach(t => topics.add(t));
+          }
+        });
+        setUserTopics(Array.from(topics));
+      } catch (err) {
+        console.error("Failed to fetch user documents:", err);
+      }
+    };
+    fetchUserDocs();
+  }, [spaceId]);
+
+  const activeTopics = sourceType === 'curriculum' ? availTopics : userTopics;
+
+  useEffect(() => {
+    if (activeTopics.length > 0) {
+      setTopicChoice(activeTopics[0]);
     }
-  }, [availTopics]);
+  }, [activeTopics, sourceType]);
 
   useEffect(() => {
     if (isExamMode) {
@@ -140,7 +164,8 @@ export default function ExamLabTab({ spaceId, space }) {
       const data = await api.post(`/spaces/${spaceId}/quiz/generate`, {
         topic: isExamMode ? null : targetTopic,
         count: parseInt(count),
-        lang
+        lang,
+        source_type: sourceType,
       });
 
       if (data && data.questions) {
@@ -191,7 +216,27 @@ export default function ExamLabTab({ spaceId, space }) {
         <div className="setup-card">
           <h3>Generate Quiz</h3>
           
-          <div className="mode-toggle">
+          <div className="form-group" style={{ marginBottom: '1rem' }}>
+            <label>Knowledge Source</label>
+            <div className="mode-toggle">
+              <button 
+                className={`mode-btn ${sourceType === 'curriculum' ? 'active' : ''}`}
+                onClick={() => setSourceType('curriculum')}
+              >
+                TN Textbook (Curriculum)
+              </button>
+              <button 
+                className={`mode-btn ${sourceType === 'user' ? 'active' : ''}`}
+                onClick={() => setSourceType('user')}
+              >
+                My Study Materials
+              </button>
+            </div>
+          </div>
+          
+          <div className="form-group" style={{ marginBottom: '1rem' }}>
+            <label>Quiz Mode</label>
+            <div className="mode-toggle">
             <button 
               className={`mode-btn ${!isExamMode ? 'active' : ''}`}
               onClick={() => setIsExamMode(false)}
@@ -204,6 +249,7 @@ export default function ExamLabTab({ spaceId, space }) {
             >
               Full Mock Exam
             </button>
+            </div>
           </div>
 
           <form onSubmit={handleGenerate} className="generate-form">
@@ -211,9 +257,9 @@ export default function ExamLabTab({ spaceId, space }) {
               <label>Chapter / Topic</label>
               {isExamMode ? (
                 <input type="text" value="Whole Syllabus" disabled />
-              ) : availTopics.length > 0 ? (
+              ) : activeTopics.length > 0 ? (
                 <select value={topicChoice} onChange={e => setTopicChoice(e.target.value)}>
-                  {availTopics.map(t => <option key={t} value={t}>{t}</option>)}
+                  {activeTopics.map(t => <option key={t} value={t}>{t}</option>)}
                   <option value="✏️ Custom (type below)">✏️ Custom (type below)</option>
                 </select>
               ) : (
@@ -221,7 +267,7 @@ export default function ExamLabTab({ spaceId, space }) {
                   type="text" 
                   value={topicChoice} 
                   onChange={e => setTopicChoice(e.target.value)} 
-                  placeholder="e.g. Cell Division"
+                  placeholder={sourceType === 'user' ? "Upload materials first or type custom topic..." : "e.g. Cell Division"}
                   required
                 />
               )}
@@ -319,7 +365,19 @@ export default function ExamLabTab({ spaceId, space }) {
 
       {/* Results */}
       {submitted && showAnalysis && analysis && (
-        <ResultAnalysisPanel analysis={analysis} spaceId={spaceId} onBack={() => setShowAnalysis(false)} />
+        <ResultAnalysisPanel 
+          analysis={analysis} 
+          spaceId={spaceId} 
+          onBack={() => setShowAnalysis(false)} 
+          onReviseTopic={(topic) => {
+            // Need a way to pre-fill the chat. For now we just switch tab.
+            // A more complex implementation could use a global state or context.
+            if (onTabChange) onTabChange('mystudygpt');
+            setTimeout(() => {
+              alert(`Switched to My Study GPT. You can ask: "Help me revise ${topic}"`);
+            }, 500);
+          }}
+        />
       )}
 
       {submitted && !showAnalysis && (

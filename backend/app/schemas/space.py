@@ -52,6 +52,7 @@ class MessageCreate(BaseModel):
     active_doc_filename: Optional[str] = None     # filename for display in system prompt
     chat_session_id: Optional[int] = None         # scoped chat session
     is_continuation: bool = False                 # Flag to indicate resuming a previous response
+    mode: str = "ai_tutor"                        # "ai_tutor" or "my_study_gpt"
 
 
 class MessageOut(BaseModel):
