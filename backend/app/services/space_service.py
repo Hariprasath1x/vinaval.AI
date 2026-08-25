@@ -112,8 +112,8 @@ class SpaceService:
 
     # ── Chat ───────────────────────────────────────────────────────────────────
 
-    async def get_messages(self, space_id: int, session_id: Optional[int] = None) -> List[ChatMessage]:
-        return await self.repo.get_messages(space_id, session_id=session_id)
+    async def get_messages(self, space_id: int, session_id: Optional[int] = None, limit: int = 50) -> List[ChatMessage]:
+        return await self.repo.get_messages(space_id, session_id=session_id, limit=limit)
 
     async def save_user_message(self, space_id: int, content: str,
                                 session_id: Optional[int] = None) -> ChatMessage:
@@ -140,24 +140,27 @@ class SpaceService:
         """
         logger.info("[CHAT] Stream generator started")
 
-        # Build history for this session (last 20 messages for context window)
-        logger.info("[CHAT] Loading chat history")
-        messages = await self.repo.get_messages(space.id, session_id=chat_session_id)
-        logger.info(f"[CHAT] Chat history loaded count={len(messages)}")
-        history = [{"role": m.role, "content": m.content} for m in messages[-20:]]
-        is_first_exchange = len(history) == 0
+        logger.info("[CHAT] Loading chat history and state concurrently")
+        import asyncio
+        
+        async def fetch_messages():
+            msgs = await self.repo.get_messages(space.id, session_id=chat_session_id, limit=6)
+            return [{"role": m.role, "content": m.content} for m in msgs]
+            
+        async def fetch_state():
+            if is_continuation and chat_session_id:
+                session = await self.repo.get_chat_session(chat_session_id, space.id)
+                if session and session.state:
+                    import json
+                    try:
+                        return json.loads(session.state)
+                    except Exception:
+                        pass
+            return None
 
-        # Fetch previous state if continuation is requested
-        previous_state = None
-        if is_continuation and chat_session_id:
-            logger.info("[CHAT] Continuation requested. Fetching previous state.")
-            chat_session = await self.repo.get_chat_session(chat_session_id, space.id)
-            if chat_session and chat_session.state:
-                import json
-                try:
-                    previous_state = json.loads(chat_session.state)
-                except Exception:
-                    pass
+        history, previous_state = await asyncio.gather(fetch_messages(), fetch_state())
+        logger.info(f"[CHAT] Chat history loaded count={len(history)}")
+        is_first_exchange = len(history) == 0
 
         # Save user message (only if it's not a continuation signal like 'NEXT', or maybe we don't save NEXT at all to keep history clean)
         # Wait, if the user explicitly typed "NEXT", we should just not persist it in the chat history, 

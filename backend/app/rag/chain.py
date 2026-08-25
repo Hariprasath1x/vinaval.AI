@@ -40,7 +40,7 @@ import logging
 import re as _re
 import time
 from typing import AsyncGenerator, List, Dict, Tuple, Optional
-import google.generativeai as genai
+import google.generativeai as genai  # type: ignore
 from app.core.config import get_settings
 
 logger = logging.getLogger(__name__)
@@ -54,6 +54,8 @@ async def _llm_complete(
     max_tokens: int = 3000,
     temperature: float = 0.5,
     system_instruction: Optional[str] = None,
+    model_override: Optional[str] = None,
+    response_mime_type: Optional[str] = None,
 ) -> str:
     """
     Non-streaming LLM completion using Gemini.
@@ -61,23 +63,29 @@ async def _llm_complete(
     """
     if settings.GEMINI_API_KEY:
         try:
-            logger.info("[LLM] Attempting Gemini for completion")
-            genai.configure(api_key=settings.GEMINI_API_KEY)
-            model = genai.GenerativeModel(
-                settings.GEMINI_MODEL,
+            logger.info(f"[LLM] Attempting Gemini completion (model: {model_override or settings.GEMINI_MODEL})")
+            genai.configure(api_key=settings.GEMINI_API_KEY)  # type: ignore
+            model = genai.GenerativeModel(  # type: ignore
+                model_override or settings.GEMINI_MODEL,
                 system_instruction=system_instruction,
             )
+            
+            gen_config_kwargs = {
+                "max_output_tokens": max_tokens,
+                "temperature": temperature,
+            }
+            if response_mime_type:
+                gen_config_kwargs["response_mime_type"] = response_mime_type  # type: ignore
+                
             response = await model.generate_content_async(
                 contents=[{"role": "user", "parts": [prompt]}],
-                generation_config=genai.types.GenerationConfig(
-                    max_output_tokens=max_tokens,
-                    temperature=temperature,
-                ),
+                generation_config=genai.types.GenerationConfig(**gen_config_kwargs),  # type: ignore
             )
             text = response.text.strip() if response.text else ""
             if text:
                 logger.info("[LLM] Gemini completion succeeded")
                 return text
+            return ""
         except Exception as e:
             logger.error(f"[LLM] Gemini completion failed: {e}. Falling back to Groq.")
             if settings.GROQ_API_KEY:
@@ -101,7 +109,7 @@ async def _llm_complete(
                     return ""
                 except Exception as groq_e:
                     logger.error(f"[LLM] Groq fallback failed: {groq_e}")
-                    raise ValueError(f"LLM completion failed for both Gemini and Groq")
+                    raise ValueError("LLM completion failed for both Gemini and Groq")
             else:
                 raise ValueError(f"LLM completion failed: {e}")
     else:
@@ -534,7 +542,11 @@ def _load_all_doc_chunks(exam: str, subject: str, doc_id: int) -> Tuple[str, int
 
         # Sort by chunk_index for logical order
         paired = sorted(zip(all_metas, all_docs), key=lambda x: x[0].get("chunk_index", 0))
-        all_metas, all_docs = zip(*paired) if paired else ([], [])
+        if paired:
+            unzipped = list(zip(*paired))
+            all_metas, all_docs = list(unzipped[0]), list(unzipped[1])
+        else:
+            all_metas, all_docs = [], []
 
         topics_found: List[str] = []
         seen_topics: set = set()
@@ -711,7 +723,7 @@ async def stream_chat(
             if mode == "my_study_gpt" and space_id:
                 intent = "QUESTION"
                 logger.info(f"[RAG] Mode: My Study GPT, querying user space_id={space_id}")
-                context_block, n_chunks = _retrieve_user_context(exam, subject, user_message, space_id, n_results=5)
+                context_block, n_chunks = _retrieve_user_context(exam, subject, user_message, space_id, n_results=4)
             elif active_doc_id:
                 if intent == "LIST_TOPICS":
                     topics = _get_topics_from_metadata(exam, subject, active_doc_id)
@@ -727,11 +739,11 @@ async def stream_chat(
                     n_topics = len(found_topics)
                 else:
                     context_block, n_chunks = _retrieve_doc_context(
-                        exam, subject, user_message, active_doc_id, n_results=5
+                        exam, subject, user_message, active_doc_id, n_results=3
                     )
             else:
                 intent = "QUESTION"
-                context_block, n_chunks = _retrieve_syllabus_context(exam, subject, user_message, n_results=4)
+                context_block, n_chunks = _retrieve_syllabus_context(exam, subject, user_message, n_results=3)
                 
             if n_chunks == 0 and intent == "QUESTION" and not active_doc_id and mode != "my_study_gpt":
                 # No chunks retrieved - switch to Fallback mode
@@ -781,8 +793,8 @@ async def stream_chat(
         try:
             logger.info("[LLM] Starting LLM request")
             logger.info(f"[LLM] provider=gemini model={settings.GEMINI_MODEL} context_chunks={n_chunks} history_messages={len(recent_history)}")
-            genai.configure(api_key=settings.GEMINI_API_KEY)
-            model = genai.GenerativeModel(settings.GEMINI_MODEL, system_instruction=system_prompt)
+            genai.configure(api_key=settings.GEMINI_API_KEY)  # type: ignore
+            model = genai.GenerativeModel(settings.GEMINI_MODEL, system_instruction=system_prompt)  # type: ignore
 
             gemini_history = []
             for msg in recent_history:
@@ -797,7 +809,7 @@ async def stream_chat(
             stream = await model.generate_content_async(
                 contents=gemini_history,
                 stream=True,
-                generation_config=genai.types.GenerationConfig(
+                generation_config=genai.types.GenerationConfig(  # type: ignore
                     max_output_tokens=max_tokens,
                     temperature=0.7,
                 )
@@ -959,57 +971,69 @@ async def generate_mcqs(
 
     lang_instruction = _MCQ_LANG_INSTRUCTIONS.get(lang, _MCQ_LANG_INSTRUCTIONS["en"])
 
-    if topic:
-        topic_instruction = f"Generate exactly {count} multiple-choice questions on the topic: \"{topic}\""
-    else:
-        topic_instruction = f"Generate a full mock exam with exactly {count} multiple-choice questions covering a diverse range of topics across the entire syllabus"
-
-    prompt = MCQ_SYSTEM.format(
-        exam=exam,
-        subject=subject,
-        topic_instruction=topic_instruction,
-        count=count,
-        context_block=context_block,
-        lang_instruction=lang_instruction,
-    )
-
-    raw = await _llm_complete(prompt, max_tokens=8192, temperature=0.5)
-    
-    # Strip markdown formatting
-    if "```" in raw:
-        parts = raw.split("```")
-        if len(parts) >= 3:
-            raw = parts[1]
+    async def generate_batch(batch_count: int, batch_index: int) -> List[Dict]:
+        batch_prompt = MCQ_SYSTEM.format(
+            exam=exam,
+            subject=subject,
+            topic_instruction=f"Generate exactly {batch_count} multiple-choice questions on the topic: \"{topic}\"" if topic else f"Generate exactly {batch_count} multiple-choice questions covering diverse topics",
+            count=batch_count,
+            context_block=context_block,
+            lang_instruction=lang_instruction,
+        )
+        
+        t0 = time.perf_counter()
+        raw = await _llm_complete(
+            batch_prompt, 
+            max_tokens=4096, 
+            temperature=0.5,
+            model_override="gemini-1.5-flash",
+            response_mime_type="application/json"
+        )
+        logger.info(f"[TELEMETRY] generate_mcqs batch {batch_index} LLM time: {time.perf_counter() - t0:.3f}s for {batch_count} Qs")
+        
+        if "```" in raw:
+            parts = raw.split("```")
+            raw = parts[1] if len(parts) >= 3 else raw.replace("```json", "").replace("```", "")
             if raw.strip().startswith("json"):
                 raw = raw.strip()[4:]
-        else:
-            raw = raw.replace("```json", "").replace("```", "")
+                
+        raw = raw.strip()
+        
+        try:
+            return json.loads(raw)
+        except json.JSONDecodeError as e:
+            # Basic recovery
+            last_brace = raw.rfind("}")
+            first_bracket = raw.find("[")
+            if last_brace != -1 and first_bracket != -1:
+                try:
+                    repaired = raw[first_bracket:last_brace + 1] + "]"
+                    return json.loads(repaired)
+                except Exception:
+                    pass
+            logger.error(f"Failed to parse MCQ JSON: {e}")
+            return []
+
+    # Chunk into batches of max 10 for parallel generation
+    import asyncio
+    batch_sizes = []
+    remaining = count
+    while remaining > 0:
+        sz = min(10, remaining)
+        batch_sizes.append(sz)
+        remaining -= sz
+
+    t_start = time.perf_counter()
+    tasks = [generate_batch(sz, i) for i, sz in enumerate(batch_sizes)]
+    results = await asyncio.gather(*tasks)
+    
+    questions = []
+    for r in results:
+        if isinstance(r, list):
+            questions.extend(r)
             
-    raw = raw.strip()
-
-    try:
-        questions = json.loads(raw)
-    except json.JSONDecodeError as e:
-        # Attempt to recover by taking only up to the last valid completed object
-        last_brace = raw.rfind("}")
-        if last_brace != -1:
-            try:
-                # Find if there is a starting bracket
-                first_bracket = raw.find("[")
-                if first_bracket != -1:
-                    repaired = raw[first_bracket:last_brace+1] + "]"
-                    questions = json.loads(repaired)
-                else:
-                    raise ValueError(f"MCQ generation returned invalid JSON: {e}\nRaw: {raw[:300]}")
-            except Exception:
-                raise ValueError(f"MCQ generation returned invalid JSON: {e}\nRaw: {raw[:300]}")
-        else:
-            raise ValueError(f"MCQ generation returned invalid JSON: {e}\nRaw: {raw[:300]}")
-
-    if not isinstance(questions, list):
-        raise ValueError("MCQ generation did not return a JSON array.")
-
-    return questions
+    logger.info(f"[TELEMETRY] generate_mcqs total parallel time: {time.perf_counter() - t_start:.3f}s for {len(questions)} Qs (requested {count})")
+    return questions[:count]
 
 
 # ── Flashcard Generation ──────────────────────────────────────────────────────
@@ -1065,31 +1089,67 @@ async def generate_flashcards(
 
     lang_instruction = _FLASH_LANG_INSTRUCTIONS.get(lang, _FLASH_LANG_INSTRUCTIONS["en"])
 
-    prompt = FLASHCARD_SYSTEM.format(
-        exam=exam,
-        subject=subject,
-        topic=topic,
-        count=count,
-        context_block=context_block,
-        lang_instruction=lang_instruction,
-    )
+    async def generate_batch(batch_count: int, batch_index: int) -> List[Dict]:
+        batch_prompt = FLASHCARD_SYSTEM.format(
+            exam=exam,
+            subject=subject,
+            topic=topic,
+            count=batch_count,
+            context_block=context_block,
+            lang_instruction=lang_instruction,
+        )
 
-    raw = await _llm_complete(prompt, max_tokens=4096, temperature=0.4)
-    if raw.startswith("```"):
-        raw = raw.split("```")[1]
-        if raw.startswith("json"):
-            raw = raw[4:]
+        t0 = time.perf_counter()
+        raw = await _llm_complete(
+            batch_prompt, 
+            max_tokens=4096, 
+            temperature=0.4,
+            model_override="gemini-1.5-flash",
+            response_mime_type="application/json"
+        )
+        logger.info(f"[TELEMETRY] generate_flashcards batch {batch_index} LLM time: {time.perf_counter() - t0:.3f}s for {batch_count} cards")
+        
+        if "```" in raw:
+            parts = raw.split("```")
+            raw = parts[1] if len(parts) >= 3 else raw.replace("```json", "").replace("```", "")
+            if raw.strip().startswith("json"):
+                raw = raw.strip()[4:]
+                
         raw = raw.strip()
 
-    try:
-        cards = json.loads(raw)
-    except json.JSONDecodeError as e:
-        raise ValueError(f"Flashcard generation returned invalid JSON: {e}\nRaw: {raw[:300]}")
+        try:
+            return json.loads(raw)
+        except json.JSONDecodeError as e:
+            last_brace = raw.rfind("}")
+            first_bracket = raw.find("[")
+            if last_brace != -1 and first_bracket != -1:
+                try:
+                    repaired = raw[first_bracket:last_brace + 1] + "]"
+                    return json.loads(repaired)
+                except Exception:
+                    pass
+            logger.error(f"Failed to parse Flashcard JSON: {e}")
+            return []
 
-    if not isinstance(cards, list):
-        raise ValueError("Flashcard generation did not return a JSON array.")
+    import asyncio
+    batch_sizes = []
+    remaining = count
+    while remaining > 0:
+        sz = min(15, remaining)  # Flashcards are smaller, so we can do larger batches
+        batch_sizes.append(sz)
+        remaining -= sz
 
-    return cards
+    t_start = time.perf_counter()
+    tasks = [generate_batch(sz, i) for i, sz in enumerate(batch_sizes)]
+    results = await asyncio.gather(*tasks)
+    
+    cards = []
+    for r in results:
+        if isinstance(r, list):
+            cards.extend(r)
+            
+    logger.info(f"[TELEMETRY] generate_flashcards total parallel time: {time.perf_counter() - t_start:.3f}s for {len(cards)} cards (requested {count})")
+    return cards[:count]
 
 
 # ── Quiz Review ───────────────────────────────────────────────────────────────

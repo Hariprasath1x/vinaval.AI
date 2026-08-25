@@ -67,9 +67,16 @@ export default function Space() {
       case 'learn':
         return <SharedChatTab key="learn" spaceId={spaceId} space={space} chatType="AI_TUTOR" />;
       case 'mystudygpt':
-        return <SharedChatTab key="mystudygpt" spaceId={spaceId} space={space} chatType="MYSTUDYGPT" />;
       case 'file_chat':
-        return <SharedChatTab spaceId={spaceId} space={space} chatType="FILE_CHAT" initialActiveDoc={activeFile} key={`file_chat_${activeFile?.id}`} />;
+        return (
+          <SharedChatTab 
+            key="materials_shared_chat" 
+            spaceId={spaceId} 
+            space={space} 
+            chatType="MYSTUDYGPT" 
+            initialActiveDoc={activeTab === 'file_chat' ? activeFile : null} 
+          />
+        );
       case 'materials':
         return <MaterialsTab spaceId={spaceId} space={space} onTabChange={handleTabChange} />;
       case 'flashcards':

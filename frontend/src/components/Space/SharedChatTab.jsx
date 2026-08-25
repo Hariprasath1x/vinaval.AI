@@ -10,6 +10,35 @@ import {
 } from 'lucide-react';
 import './LearnTab.css';
 
+// ── Memoized Chat Message ──────────────────────────────────────────────────────
+const MemoizedChatMessage = React.memo(({ msg }) => {
+  return (
+    <div className={`message ${msg.role} animate-fade-in`}>
+      <div className={`avatar ${msg.role}`}>
+        {msg.role === 'user' ? <User size={18} /> : <Bot size={18} />}
+      </div>
+      <div className="message-content">
+        {msg.role === 'user' ? (
+          <p style={{ margin: 0 }}>{msg.content}</p>
+        ) : (
+          msg.content ? (
+            <ReactMarkdown 
+              remarkPlugins={[remarkGfm, remarkMath]}
+              rehypePlugins={[rehypeKatex]}
+            >
+              {msg.content}
+            </ReactMarkdown>
+          ) : (
+            <div className="typing-indicator">
+              <span></span><span></span><span></span>
+            </div>
+          )
+        )}
+      </div>
+    </div>
+  );
+});
+
 // ── TNPSC under-development guard ─────────────────────────────────────────────
 function TnpscComingSoon({ subject }) {
   return (
@@ -115,22 +144,14 @@ export default function SharedChatTab({ spaceId, space, chatType = 'AI_TUTOR', i
   const newChatInputRef = useRef(null);
   const chatEndRef = useRef(null);
 
-  const [activeDoc, setActiveDoc] = useState(() => {
-    if (initialActiveDoc) return initialActiveDoc;
-    if (chatType === 'MYSTUDYGPT') {
-      const saved = sessionStorage.getItem(`activeDoc_${spaceId}_mystudygpt`);
-      return saved ? JSON.parse(saved) : null;
-    }
-    return null;
-  });
+  const [activeDoc, setActiveDoc] = useState(initialActiveDoc || null);
 
-  // Sync activeDoc
+  // Sync activeDoc with props (e.g. user clicked a file in Materials tab, or navigated to general MyStudyGPT)
   useEffect(() => {
-    if (chatType === 'MYSTUDYGPT') {
-      if (activeDoc) sessionStorage.setItem(`activeDoc_${spaceId}_mystudygpt`, JSON.stringify(activeDoc));
-      else sessionStorage.removeItem(`activeDoc_${spaceId}_mystudygpt`);
+    if (initialActiveDoc !== undefined) {
+      setActiveDoc(initialActiveDoc);
     }
-  }, [activeDoc, spaceId, chatType]);
+  }, [initialActiveDoc]);
 
   // Listen for active-doc events from Materials tab (only in MyStudyGPT mode)
   useEffect(() => {
@@ -150,19 +171,40 @@ export default function SharedChatTab({ spaceId, space, chatType = 'AI_TUTOR', i
   // Load all chat sessions for this space
   const loadSessions = useCallback(async () => {
     try {
-      const docQuery = chatType === 'FILE_CHAT' && activeDoc ? `&file_id=${activeDoc.id}` : '';
-      const data = await api.get(`/spaces/${spaceId}/chat-sessions?chat_type=${chatType}${docQuery}`);
+      const data = await api.get(`/spaces/${spaceId}/chat-sessions?chat_type=${chatType}`);
       setSessions(data || []);
-      // Auto-select the most recent session if none active
-      if (data?.length > 0 && !activeSessionId) {
-        setActiveSessionId(data[data.length - 1].id);
-      }
     } catch (err) {
       console.error('Failed to load chat sessions:', err);
     }
-  }, [spaceId, activeSessionId, chatType, activeDoc]);
+  }, [spaceId, chatType]);
 
   useEffect(() => { loadSessions(); }, [loadSessions]);
+
+  // File routing and auto-selection
+  useEffect(() => {
+    if (sessions.length === 0) return;
+    
+    if (activeDoc) {
+      // Find a session for this specific file
+      const fileSession = sessions.find(s => s.file_id === activeDoc.id);
+      if (fileSession) {
+        if (activeSessionId !== fileSession.id) {
+          setActiveSessionId(fileSession.id);
+        }
+      } else {
+        // No session exists for this file yet. Clear active session to prepare for new chat.
+        if (activeSessionId !== null) {
+          setActiveSessionId(null);
+          setMessages([]);
+        }
+      }
+    } else {
+      // If we are just loading and have no active session (and no active doc enforcing a new chat), pick the latest
+      if (!activeSessionId) {
+        setActiveSessionId(sessions[sessions.length - 1].id);
+      }
+    }
+  }, [sessions, activeDoc, chatType]); // Intentionally excluding activeSessionId
 
   // Load messages for the active session
   useEffect(() => {
@@ -259,6 +301,15 @@ export default function SharedChatTab({ spaceId, space, chatType = 'AI_TUTOR', i
     if (sessionId !== activeSessionId) {
       setActiveSessionId(sessionId);
       setCanContinue(false);
+      
+      // If this session is tied to a file, update activeDoc
+      const session = sessions.find(s => s.id === sessionId);
+      if (session && session.file_id) {
+        const docInfo = space?.documents?.find(d => d.id === session.file_id);
+        setActiveDoc(docInfo || { id: session.file_id, filename: "Selected Document" });
+      } else {
+        setActiveDoc(null);
+      }
     }
   };
 
@@ -292,21 +343,40 @@ export default function SharedChatTab({ spaceId, space, chatType = 'AI_TUTOR', i
     try {
       const generator = api.streamPost(`/spaces/${spaceId}/chat`, payload);
       let fullResponse = '';
+      let lastUpdateTime = 0;
+
       for await (const chunk of generator) {
         fullResponse += chunk;
         
-        let displayResponse = fullResponse;
-        if (displayResponse.includes('[CONTINUE_AVAILABLE]')) {
-          setCanContinue(true);
-          displayResponse = displayResponse.replace('[CONTINUE_AVAILABLE]', '');
-        }
+        const now = Date.now();
+        // Update at most every 50ms to prevent heavy ReactMarkdown blockages
+        if (now - lastUpdateTime > 50 || fullResponse.includes('[CONTINUE_AVAILABLE]')) {
+          let displayResponse = fullResponse;
+          if (displayResponse.includes('[CONTINUE_AVAILABLE]')) {
+            setCanContinue(true);
+            displayResponse = displayResponse.replace('[CONTINUE_AVAILABLE]', '');
+          }
 
-        setMessages(prev => {
-          const msgs = [...prev];
-          msgs[msgs.length - 1] = { ...msgs[msgs.length - 1], content: displayResponse };
-          return msgs;
-        });
+          setMessages(prev => {
+            const msgs = [...prev];
+            msgs[msgs.length - 1] = { ...msgs[msgs.length - 1], content: displayResponse };
+            return msgs;
+          });
+          lastUpdateTime = now;
+        }
       }
+
+      // Final flush
+      let displayResponse = fullResponse;
+      if (displayResponse.includes('[CONTINUE_AVAILABLE]')) {
+        setCanContinue(true);
+        displayResponse = displayResponse.replace('[CONTINUE_AVAILABLE]', '');
+      }
+      setMessages(prev => {
+        const msgs = [...prev];
+        msgs[msgs.length - 1] = { ...msgs[msgs.length - 1], content: displayResponse };
+        return msgs;
+      });
 
       // After first exchange: poll for AI name suggestion (after short delay for backend)
       if (messages.length === 0) {
@@ -538,29 +608,7 @@ export default function SharedChatTab({ spaceId, space, chatType = 'AI_TUTOR', i
                 </div>
               )}
               {messages.map((msg, idx) => (
-                <div key={idx} className={`message ${msg.role} animate-fade-in`}>
-                  <div className={`avatar ${msg.role}`}>
-                    {msg.role === 'user' ? <User size={18} /> : <Bot size={18} />}
-                  </div>
-                  <div className="message-content">
-                    {msg.role === 'user' ? (
-                      <p style={{ margin: 0 }}>{msg.content}</p>
-                    ) : (
-                      msg.content ? (
-                        <ReactMarkdown 
-                          remarkPlugins={[remarkGfm, remarkMath]}
-                          rehypePlugins={[rehypeKatex]}
-                        >
-                          {msg.content}
-                        </ReactMarkdown>
-                      ) : (
-                        <div className="typing-indicator">
-                          <span></span><span></span><span></span>
-                        </div>
-                      )
-                    )}
-                  </div>
-                </div>
+                <MemoizedChatMessage key={idx} msg={msg} />
               ))}
               <div ref={chatEndRef} />
             </div>
