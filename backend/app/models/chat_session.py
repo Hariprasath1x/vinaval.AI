@@ -12,6 +12,8 @@ class ChatSession(Base):
     name = Column(String, nullable=False, default="New Chat")
     ai_suggested_name = Column(String, nullable=True)   # AI suggestion, user may override
     state = Column(Text, nullable=True)                 # JSON string storing continuation state
+    chat_type = Column(String(50), nullable=False, default="AI_TUTOR") # AI_TUTOR, MYSTUDYGPT, FILE_CHAT
+    file_id = Column(Integer, ForeignKey("space_documents.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 

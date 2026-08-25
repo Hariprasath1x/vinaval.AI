@@ -1,5 +1,6 @@
 import bcrypt
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.exc import IntegrityError
 
 from app.core.firebase import verify_firebase_token
 from app.core.security import create_access_token, create_refresh_token, decode_access_token
@@ -120,14 +121,23 @@ class AuthService:
                 await self.db.commit()
                 await self.db.refresh(user)
             else:
-                user = await self.repo.create(
-                    UserCreate(
-                        google_id=user_info["uid"],
-                        email=user_info["email"],
-                        name=user_info["name"],
-                        avatar_url=user_info.get("picture"),
+                try:
+                    user = await self.repo.create(
+                        UserCreate(
+                            google_id=user_info["uid"],
+                            email=user_info["email"],
+                            name=user_info["name"],
+                            avatar_url=user_info.get("picture"),
+                        )
                     )
-                )
+                except IntegrityError:
+                    # Fallback in case of a race condition (e.g., React StrictMode firing login twice)
+                    await self.db.rollback()
+                    user = await self.repo.get_by_email(user_info["email"])
+                    if user and not user.google_id:
+                        user.google_id = user_info["uid"]
+                        await self.db.commit()
+                        await self.db.refresh(user)
 
         access_token = create_access_token(data={"sub": str(user.id)})
         refresh_token = create_refresh_token(data={"sub": str(user.id)})

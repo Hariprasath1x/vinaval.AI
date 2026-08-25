@@ -81,13 +81,15 @@ async def delete_space(
 @router.get("/{space_id}/chat-sessions", response_model=List[ChatSessionOut])
 async def list_chat_sessions(
     space_id: int,
+    chat_type: Optional[str] = None,
+    file_id: Optional[int] = None,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """List all named chat conversations for this Learning Space."""
     service = SpaceService(db)
     await service.get_space(space_id, current_user.id)  # ownership check
-    return await service.list_chat_sessions(space_id)
+    return await service.list_chat_sessions(space_id, chat_type=chat_type, file_id=file_id)
 
 
 @router.post("/{space_id}/chat-sessions", response_model=ChatSessionOut, status_code=status.HTTP_201_CREATED)
@@ -100,7 +102,7 @@ async def create_chat_session(
     """Create a new named chat session within this Learning Space."""
     service = SpaceService(db)
     await service.get_space(space_id, current_user.id)  # ownership check
-    return await service.create_chat_session(space_id, body.name)
+    return await service.create_chat_session(space_id, name=body.name, chat_type=body.chat_type, file_id=body.file_id)
 
 
 @router.put("/{space_id}/chat-sessions/{session_id}", response_model=ChatSessionOut)

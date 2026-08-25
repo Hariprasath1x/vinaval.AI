@@ -1,5 +1,5 @@
 import React from 'react';
-import { Target, CheckCircle2, AlertTriangle, ArrowRight, Lightbulb, UserCheck, RefreshCw } from 'lucide-react';
+import { Target, CheckCircle2, AlertTriangle, ArrowRight, Lightbulb, UserCheck, RefreshCw, Bot } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import './ResultAnalysisPanel.css';
 import { api } from '../../services/api';

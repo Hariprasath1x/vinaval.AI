@@ -26,7 +26,8 @@ class SpaceOut(BaseModel):
 
 class ChatSessionCreate(BaseModel):
     name: str = "New Chat"
-
+    chat_type: str = "AI_TUTOR"
+    file_id: Optional[int] = None
 
 class ChatSessionRename(BaseModel):
     name: str
@@ -37,6 +38,8 @@ class ChatSessionOut(BaseModel):
     space_id: int
     name: str
     ai_suggested_name: Optional[str] = None
+    chat_type: str
+    file_id: Optional[int] = None
     created_at: datetime
     updated_at: datetime
 

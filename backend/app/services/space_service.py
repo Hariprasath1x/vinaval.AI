@@ -67,11 +67,11 @@ class SpaceService:
 
     # ── Chat Sessions ──────────────────────────────────────────────────────────
 
-    async def create_chat_session(self, space_id: int, name: str = "New Chat") -> ChatSession:
-        return await self.repo.create_chat_session(space_id, name)
+    async def create_chat_session(self, space_id: int, name: str = "New Chat", chat_type: str = "AI_TUTOR", file_id: Optional[int] = None) -> ChatSession:
+        return await self.repo.create_chat_session(space_id, name=name, chat_type=chat_type, file_id=file_id)
 
-    async def list_chat_sessions(self, space_id: int) -> List[ChatSession]:
-        return await self.repo.list_chat_sessions(space_id)
+    async def list_chat_sessions(self, space_id: int, chat_type: Optional[str] = None, file_id: Optional[int] = None) -> List[ChatSession]:
+        return await self.repo.list_chat_sessions(space_id, chat_type=chat_type, file_id=file_id)
 
     async def rename_chat_session(self, session_id: int, space_id: int, name: str) -> ChatSession:
         session = await self.repo.rename_chat_session(session_id, space_id, name)

@@ -973,17 +973,38 @@ async def generate_mcqs(
         lang_instruction=lang_instruction,
     )
 
-    raw = await _llm_complete(prompt, max_tokens=3000, temperature=0.5)
-    if raw.startswith("```"):
-        raw = raw.split("```")[1]
-        if raw.startswith("json"):
-            raw = raw[4:]
-        raw = raw.strip()
+    raw = await _llm_complete(prompt, max_tokens=8192, temperature=0.5)
+    
+    # Strip markdown formatting
+    if "```" in raw:
+        parts = raw.split("```")
+        if len(parts) >= 3:
+            raw = parts[1]
+            if raw.strip().startswith("json"):
+                raw = raw.strip()[4:]
+        else:
+            raw = raw.replace("```json", "").replace("```", "")
+            
+    raw = raw.strip()
 
     try:
         questions = json.loads(raw)
     except json.JSONDecodeError as e:
-        raise ValueError(f"MCQ generation returned invalid JSON: {e}\nRaw: {raw[:300]}")
+        # Attempt to recover by taking only up to the last valid completed object
+        last_brace = raw.rfind("}")
+        if last_brace != -1:
+            try:
+                # Find if there is a starting bracket
+                first_bracket = raw.find("[")
+                if first_bracket != -1:
+                    repaired = raw[first_bracket:last_brace+1] + "]"
+                    questions = json.loads(repaired)
+                else:
+                    raise ValueError(f"MCQ generation returned invalid JSON: {e}\nRaw: {raw[:300]}")
+            except Exception:
+                raise ValueError(f"MCQ generation returned invalid JSON: {e}\nRaw: {raw[:300]}")
+        else:
+            raise ValueError(f"MCQ generation returned invalid JSON: {e}\nRaw: {raw[:300]}")
 
     if not isinstance(questions, list):
         raise ValueError("MCQ generation did not return a JSON array.")

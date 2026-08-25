@@ -14,8 +14,7 @@ import {
 import './Space.css';
 
 // Import Tabs
-import LearnTab from '../components/Space/LearnTab';
-import MyStudyGptTab from '../components/Space/MyStudyGptTab';
+import SharedChatTab from '../components/Space/SharedChatTab';
 import MaterialsTab from '../components/Space/MaterialsTab';
 import FlashcardsTab from '../components/Space/FlashcardsTab';
 import ExamLabTab from '../components/Space/ExamLabTab';
@@ -28,7 +27,13 @@ export default function Space() {
   
   const [space, setSpace] = useState(location.state?.space || null);
   const [activeTab, setActiveTab] = useState(location.state?.activeTab || 'learn');
+  const [activeFile, setActiveFile] = useState(null);
   const [loading, setLoading] = useState(!space);
+
+  const handleTabChange = (tab, file = null) => {
+    setActiveTab(tab);
+    if (file) setActiveFile(file);
+  };
 
   useEffect(() => {
     if (!space) {
@@ -60,19 +65,21 @@ export default function Space() {
   const renderContent = () => {
     switch (activeTab) {
       case 'learn':
-        return <LearnTab spaceId={spaceId} space={space} />;
+        return <SharedChatTab key="learn" spaceId={spaceId} space={space} chatType="AI_TUTOR" />;
       case 'mystudygpt':
-        return <MyStudyGptTab spaceId={spaceId} space={space} />;
+        return <SharedChatTab key="mystudygpt" spaceId={spaceId} space={space} chatType="MYSTUDYGPT" />;
+      case 'file_chat':
+        return <SharedChatTab spaceId={spaceId} space={space} chatType="FILE_CHAT" initialActiveDoc={activeFile} key={`file_chat_${activeFile?.id}`} />;
       case 'materials':
-        return <MaterialsTab spaceId={spaceId} space={space} onTabChange={setActiveTab} />;
+        return <MaterialsTab spaceId={spaceId} space={space} onTabChange={handleTabChange} />;
       case 'flashcards':
         return <FlashcardsTab spaceId={spaceId} space={space} />;
       case 'examlab':
-        return <ExamLabTab spaceId={spaceId} space={space} onTabChange={setActiveTab} />;
+        return <ExamLabTab spaceId={spaceId} space={space} onTabChange={handleTabChange} />;
       case 'reports':
         return <ReportsTab spaceId={spaceId} space={space} />;
       default:
-        return <LearnTab spaceId={spaceId} space={space} />;
+        return <SharedChatTab key="default" spaceId={spaceId} space={space} chatType="AI_TUTOR" />;
     }
   };
 

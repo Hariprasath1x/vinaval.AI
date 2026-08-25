@@ -79,15 +79,9 @@ export default function MaterialsTab({ spaceId, onTabChange }) {
       topics: doc.topics || []
     };
     
-    // Dispatch event for LearnTab
-    const event = new CustomEvent('set-active-doc', { 
-      detail: { spaceId, doc: activeDoc } 
-    });
-    window.dispatchEvent(event);
-    
-    // Switch to Learn tab
+    // Switch to File Chat tab
     if (onTabChange) {
-      onTabChange('learn');
+      onTabChange('file_chat', activeDoc);
     }
   };
 

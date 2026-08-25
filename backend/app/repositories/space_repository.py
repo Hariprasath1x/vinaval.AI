@@ -69,8 +69,8 @@ class SpaceRepository:
 
     # ── Chat Sessions ──────────────────────────────────────────────────────────
 
-    async def create_chat_session(self, space_id: int, name: str = "New Chat") -> ChatSession:
-        session = ChatSession(space_id=space_id, name=name)
+    async def create_chat_session(self, space_id: int, name: str = "New Chat", chat_type: str = "AI_TUTOR", file_id: Optional[int] = None) -> ChatSession:
+        session = ChatSession(space_id=space_id, name=name, chat_type=chat_type, file_id=file_id)
         self.db.add(session)
         await self.db.commit()
         await self.db.refresh(session)
@@ -85,12 +85,14 @@ class SpaceRepository:
         )
         return result.scalar_one_or_none()
 
-    async def list_chat_sessions(self, space_id: int) -> List[ChatSession]:
-        result = await self.db.execute(
-            select(ChatSession)
-            .where(ChatSession.space_id == space_id)
-            .order_by(ChatSession.created_at.asc())
-        )
+    async def list_chat_sessions(self, space_id: int, chat_type: Optional[str] = None, file_id: Optional[int] = None) -> List[ChatSession]:
+        stmt = select(ChatSession).where(ChatSession.space_id == space_id)
+        if chat_type:
+            stmt = stmt.where(ChatSession.chat_type == chat_type)
+        if file_id is not None:
+            stmt = stmt.where(ChatSession.file_id == file_id)
+        
+        result = await self.db.execute(stmt.order_by(ChatSession.created_at.asc()))
         return list(result.scalars().all())
 
     async def rename_chat_session(self, session_id: int, space_id: int, name: str) -> Optional[ChatSession]:

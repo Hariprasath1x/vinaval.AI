@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { api } from '../../services/api';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
 import {
   Send, Bot, User, Paperclip, X, Settings, ChevronDown, ChevronUp,
   Plus, MessageSquare, Pencil, Trash2, Check, Sparkles, AlertTriangle
@@ -97,7 +99,7 @@ function AiNameSuggestion({ suggestion, onAccept, onDismiss }) {
 }
 
 // ── Main LearnTab ──────────────────────────────────────────────────────────────
-export default function LearnTab({ spaceId, space }) {
+export default function SharedChatTab({ spaceId, space, chatType = 'AI_TUTOR', initialActiveDoc = null }) {
   const [sessions, setSessions] = useState([]);
   const [activeSessionId, setActiveSessionId] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -114,24 +116,31 @@ export default function LearnTab({ spaceId, space }) {
   const chatEndRef = useRef(null);
 
   const [activeDoc, setActiveDoc] = useState(() => {
-    const saved = sessionStorage.getItem(`activeDoc_${spaceId}`);
-    return saved ? JSON.parse(saved) : null;
+    if (initialActiveDoc) return initialActiveDoc;
+    if (chatType === 'MYSTUDYGPT') {
+      const saved = sessionStorage.getItem(`activeDoc_${spaceId}_mystudygpt`);
+      return saved ? JSON.parse(saved) : null;
+    }
+    return null;
   });
 
   // Sync activeDoc
   useEffect(() => {
-    if (activeDoc) sessionStorage.setItem(`activeDoc_${spaceId}`, JSON.stringify(activeDoc));
-    else sessionStorage.removeItem(`activeDoc_${spaceId}`);
-  }, [activeDoc, spaceId]);
+    if (chatType === 'MYSTUDYGPT') {
+      if (activeDoc) sessionStorage.setItem(`activeDoc_${spaceId}_mystudygpt`, JSON.stringify(activeDoc));
+      else sessionStorage.removeItem(`activeDoc_${spaceId}_mystudygpt`);
+    }
+  }, [activeDoc, spaceId, chatType]);
 
-  // Listen for active-doc events from Materials tab
+  // Listen for active-doc events from Materials tab (only in MyStudyGPT mode)
   useEffect(() => {
+    if (chatType !== 'MYSTUDYGPT') return;
     const handler = (e) => {
       if (e.detail?.spaceId === spaceId) setActiveDoc(e.detail.doc);
     };
     window.addEventListener('set-active-doc', handler);
     return () => window.removeEventListener('set-active-doc', handler);
-  }, [spaceId]);
+  }, [spaceId, chatType]);
 
   // Focus new-chat input when dialog opens
   useEffect(() => {
@@ -141,7 +150,8 @@ export default function LearnTab({ spaceId, space }) {
   // Load all chat sessions for this space
   const loadSessions = useCallback(async () => {
     try {
-      const data = await api.get(`/spaces/${spaceId}/chat-sessions`);
+      const docQuery = chatType === 'FILE_CHAT' && activeDoc ? `&file_id=${activeDoc.id}` : '';
+      const data = await api.get(`/spaces/${spaceId}/chat-sessions?chat_type=${chatType}${docQuery}`);
       setSessions(data || []);
       // Auto-select the most recent session if none active
       if (data?.length > 0 && !activeSessionId) {
@@ -150,7 +160,7 @@ export default function LearnTab({ spaceId, space }) {
     } catch (err) {
       console.error('Failed to load chat sessions:', err);
     }
-  }, [spaceId, activeSessionId]);
+  }, [spaceId, activeSessionId, chatType, activeDoc]);
 
   useEffect(() => { loadSessions(); }, [loadSessions]);
 
@@ -182,7 +192,14 @@ export default function LearnTab({ spaceId, space }) {
   // ── Create new chat session ──────────────────────────────────────────────────
   const createSession = async (name) => {
     try {
-      const session = await api.post(`/spaces/${spaceId}/chat-sessions`, { name: name || 'New Chat' });
+      const payload = { 
+        name: name || 'New Chat',
+        chat_type: chatType
+      };
+      if (chatType === 'FILE_CHAT' && activeDoc) {
+        payload.file_id = activeDoc.id;
+      }
+      const session = await api.post(`/spaces/${spaceId}/chat-sessions`, payload);
       setSessions(prev => [...prev, session]);
       setActiveSessionId(session.id);
       setMessages([]);
@@ -265,6 +282,7 @@ export default function LearnTab({ spaceId, space }) {
       content: userMessage,
       lang: chatLang,
       chat_session_id: activeSessionId,
+      mode: chatType === 'MYSTUDYGPT' ? 'my_study_gpt' : 'ai_tutor'
     };
     if (activeDoc) {
       payload.active_doc_id = activeDoc.id;
@@ -325,6 +343,7 @@ export default function LearnTab({ spaceId, space }) {
       lang: chatLang,
       chat_session_id: activeSessionId,
       is_continuation: true,
+      mode: chatType === 'MYSTUDYGPT' ? 'my_study_gpt' : 'ai_tutor'
     };
     if (activeDoc) {
       payload.active_doc_id = activeDoc.id;
@@ -528,7 +547,10 @@ export default function LearnTab({ spaceId, space }) {
                       <p style={{ margin: 0 }}>{msg.content}</p>
                     ) : (
                       msg.content ? (
-                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                        <ReactMarkdown 
+                          remarkPlugins={[remarkGfm, remarkMath]}
+                          rehypePlugins={[rehypeKatex]}
+                        >
                           {msg.content}
                         </ReactMarkdown>
                       ) : (
