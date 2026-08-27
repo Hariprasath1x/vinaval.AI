@@ -84,6 +84,19 @@ def _make_groq_response(content: str):
     return response
 
 
+def _make_gemini_model_mock(content: str) -> MagicMock:
+    """Returns a mock genai module where GenerativeModel.generate_content_async returns content."""
+    mock_genai = MagicMock()
+    mock_model = MagicMock()
+    mock_response = MagicMock()
+    mock_response.text = content
+    mock_model.generate_content_async = AsyncMock(return_value=mock_response)
+    mock_genai.GenerativeModel.return_value = mock_model
+    mock_genai.types = MagicMock()
+    mock_genai.types.GenerationConfig = MagicMock(return_value={})
+    return mock_genai
+
+
 def _patch_space_service(mock_space):
     """Return a context-manager patch that makes SpaceService.get_space return mock_space."""
     return patch(
@@ -99,17 +112,13 @@ class TestGenerateQuestions:
         self, client: AsyncClient, mock_space
     ):
         """POST /quiz/generate with a topic returns a list of saved questions."""
-        groq_response = _make_groq_response(SAMPLE_QUESTIONS_JSON)
+        mock_genai = _make_gemini_model_mock(SAMPLE_QUESTIONS_JSON)
 
         with (
             _patch_space_service(mock_space),
-            patch("app.rag.chain.AsyncGroq") as mock_groq_cls,
+            patch("app.rag.chain.genai", mock_genai),
             patch("app.rag.chain._retrieve_syllabus_context", return_value=("", 0)),
         ):
-            mock_client = AsyncMock()
-            mock_client.chat.completions.create = AsyncMock(return_value=groq_response)
-            mock_groq_cls.return_value = mock_client
-
             response = await client.post(
                 f"/api/v1/spaces/{mock_space.id}/quiz/generate",
                 json={"topic": "Newton's Laws", "count": 2, "lang": "en"},
@@ -128,17 +137,13 @@ class TestGenerateQuestions:
         self, client: AsyncClient, mock_space
     ):
         """POST /quiz/generate with no topic triggers mock exam mode (diverse topics)."""
-        groq_response = _make_groq_response(SAMPLE_MOCK_EXAM_JSON)
+        mock_genai = _make_gemini_model_mock(SAMPLE_MOCK_EXAM_JSON)
 
         with (
             _patch_space_service(mock_space),
-            patch("app.rag.chain.AsyncGroq") as mock_groq_cls,
+            patch("app.rag.chain.genai", mock_genai),
             patch("app.rag.chain._retrieve_syllabus_context", return_value=("", 0)),
         ):
-            mock_client = AsyncMock()
-            mock_client.chat.completions.create = AsyncMock(return_value=groq_response)
-            mock_groq_cls.return_value = mock_client
-
             response = await client.post(
                 f"/api/v1/spaces/{mock_space.id}/quiz/generate",
                 json={"topic": None, "count": 2, "lang": "en"},
@@ -158,40 +163,34 @@ class TestGenerateQuestions:
         self, client: AsyncClient, mock_space
     ):
         """If the LLM returns invalid JSON, the endpoint should return 502."""
-        groq_response = _make_groq_response("This is not valid JSON at all!")
+        mock_genai = _make_gemini_model_mock("This is not valid JSON at all!")
 
         with (
             _patch_space_service(mock_space),
-            patch("app.rag.chain.AsyncGroq") as mock_groq_cls,
+            patch("app.rag.chain.genai", mock_genai),
             patch("app.rag.chain._retrieve_syllabus_context", return_value=("", 0)),
         ):
-            mock_client = AsyncMock()
-            mock_client.chat.completions.create = AsyncMock(return_value=groq_response)
-            mock_groq_cls.return_value = mock_client
-
             response = await client.post(
                 f"/api/v1/spaces/{mock_space.id}/quiz/generate",
                 json={"topic": "Gravity", "count": 5, "lang": "en"},
             )
 
         assert response.status_code == 502
-        assert "invalid JSON" in response.json()["detail"].lower() or "failed" in response.json()["detail"].lower()
+        detail = response.json()["detail"].lower()
+        # When LLM returns unparseable text, generate_mcqs returns [] → QuizService raises 502
+        assert "failed" in detail or "no valid" in detail or "invalid" in detail
 
     async def test_generate_questions_clamps_count(
         self, client: AsyncClient, mock_space
     ):
         """Requesting > 30 questions should clamp to 30; < 1 should clamp to 1."""
-        groq_response = _make_groq_response(SAMPLE_QUESTIONS_JSON)
+        mock_genai = _make_gemini_model_mock(SAMPLE_QUESTIONS_JSON)
 
         with (
             _patch_space_service(mock_space),
-            patch("app.rag.chain.AsyncGroq") as mock_groq_cls,
+            patch("app.rag.chain.genai", mock_genai),
             patch("app.rag.chain._retrieve_syllabus_context", return_value=("", 0)),
         ):
-            mock_client = AsyncMock()
-            mock_client.chat.completions.create = AsyncMock(return_value=groq_response)
-            mock_groq_cls.return_value = mock_client
-
             # Requesting 99 questions — should succeed (service clamps to 30)
             response = await client.post(
                 f"/api/v1/spaces/{mock_space.id}/quiz/generate",
@@ -357,19 +356,13 @@ class TestQuizReview:
         self, client: AsyncClient, mock_space
     ):
         """POST /quiz/review returns a review string from the LLM."""
-        groq_response = MagicMock()
-        groq_response.choices[0].message.content = (
-            "Great effort! You excelled in Newton's Laws but need more practice on Optics."
-        )
+        expected_review = "Great effort! You excelled in Newton's Laws but need more practice on Optics."
+        mock_genai = _make_gemini_model_mock(expected_review)
 
         with (
             _patch_space_service(mock_space),
-            patch("app.rag.chain.AsyncGroq") as mock_groq_cls,
+            patch("app.rag.chain.genai", mock_genai),
         ):
-            mock_client = AsyncMock()
-            mock_client.chat.completions.create = AsyncMock(return_value=groq_response)
-            mock_groq_cls.return_value = mock_client
-
             response = await client.post(
                 f"/api/v1/spaces/{mock_space.id}/quiz/review",
                 json={
