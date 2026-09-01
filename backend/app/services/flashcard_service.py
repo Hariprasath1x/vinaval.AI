@@ -1,3 +1,4 @@
+import json
 from typing import List, Optional
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -6,7 +7,7 @@ from app.repositories.flashcard_repository import FlashcardRepository
 from app.models.flashcard import Flashcard
 from app.models.space import LearningSpace
 from app.schemas.flashcard import GenerateFlashcardsRequest
-from app.rag.chain import generate_flashcards as ai_generate_flashcards
+from app.rag.chain import generate_flashcards, generate_flashcards_stream
 
 
 class FlashcardService:
@@ -14,47 +15,48 @@ class FlashcardService:
         self.db = db
         self.repo = FlashcardRepository(db)
 
-    async def generate(
+    async def generate_stream(
         self, space: LearningSpace, req: GenerateFlashcardsRequest
-    ) -> List[Flashcard]:
+    ):
         count = max(1, min(20, req.count))
-
+        lang = getattr(req, "lang", "en")
+        
         try:
-            raw_cards = await ai_generate_flashcards(
+            async for c in generate_flashcards_stream(
                 exam=space.exam_id,
                 subject=space.subject,
                 topic=req.topic,
                 count=count,
-                lang=getattr(req, "lang", "en"),
-            )
-        except ValueError as e:
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail=f"AI flashcard generation failed: {e}",
-            )
-
-        cards = []
-        for c in raw_cards:
-            if not all(k in c for k in ("front", "back")):
-                continue
-            if not c["front"].strip() or not c["back"].strip():
-                continue
-            cards.append(
-                Flashcard(
+                lang=lang,
+                source_type=getattr(req, "source_type", "curriculum"),
+                space_id=space.id,
+            ):
+                if not all(k in c for k in ("front", "back")):
+                    continue
+                if not c["front"].strip() or not c["back"].strip():
+                    continue
+                
+                card_obj = Flashcard(
                     space_id=space.id,
                     topic=req.topic,
                     front=c["front"].strip(),
                     back=c["back"].strip(),
                 )
-            )
-
-        if not cards:
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail="AI returned no valid flashcards. Try a different topic.",
-            )
-
-        return await self.repo.bulk_save(cards)
+                
+                # Save to DB individually
+                saved_card = (await self.repo.bulk_save([card_obj]))[0]
+                
+                card_dict = {
+                    "id": saved_card.id,
+                    "front": saved_card.front,
+                    "back": saved_card.back,
+                    "topic": saved_card.topic
+                }
+                yield f"event: flashcard\ndata: {json.dumps(card_dict)}\n\n"
+        except Exception as e:
+            yield f"event: error\ndata: {json.dumps({'error': str(e)})}\n\n"
+        finally:
+            yield "event: complete\ndata: {}\n\n"
 
     async def get_by_space(
         self, space_id: int, topic: Optional[str] = None

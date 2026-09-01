@@ -1,5 +1,6 @@
 from typing import List, Optional, Dict
 from fastapi import APIRouter, Depends, Query, status, Request
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.rate_limit import limiter
 
@@ -49,7 +50,7 @@ async def get_global_quiz_history(
 
 # ── Per-space endpoints ──────────────────────────────────────────────────────
 
-@router.post("/{space_id}/quiz/generate", response_model=GenerateQuestionsResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/{space_id}/quiz/generate")
 @limiter.limit("5/minute")
 async def generate_questions(
     request: Request,
@@ -58,11 +59,19 @@ async def generate_questions(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Generate AI-powered MCQs for a topic within this Learning Space."""
+    """Generate AI-powered MCQs incrementally and stream via SSE."""
     space_svc = SpaceService(db)
     space = await space_svc.get_space(space_id, current_user.id)
     quiz_svc = QuizService(db)
-    return await quiz_svc.generate_questions(space, body)
+    
+    return StreamingResponse(
+        quiz_svc.generate_questions_stream(space, body),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        }
+    )
 
 
 @router.get("/{space_id}/quiz/questions", response_model=List[QuestionOut])

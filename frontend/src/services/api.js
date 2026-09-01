@@ -144,6 +144,65 @@ export const api = {
   },
   
   // Custom streamer for RAG Chat
+  
+  // Custom streamer for object payloads (Quiz, Flashcards)
+  streamObjects: async function* (endpoint, data) {
+    let options = {
+      method: "POST",
+      headers: getHeaders(),
+      body: JSON.stringify(data),
+    };
+    
+    let response = await fetch(`${BASE_URL}${endpoint}`, options);
+    
+    if (response.status === 401 && localStorage.getItem("refresh_token")) {
+      try {
+        await api.get('/health');
+        options.headers = getHeaders();
+        response = await fetch(`${BASE_URL}${endpoint}`, options);
+      } catch (e) {
+        console.warn("Stream refresh token failed", e);
+      }
+    }
+    
+    if (!response.ok) {
+      let detail = "Streaming request failed.";
+      try {
+        const errorData = await response.json();
+        detail = errorData.detail || detail;
+      } catch (e) {
+        console.warn(e);
+      }
+      throw new Error(detail);
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder("utf-8");
+    let buffer = "";
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || ""; 
+      
+      for (const line of lines) {
+        if (line.startsWith("data: ")) {
+          const payload = line.substring(6);
+          if (!payload) continue;
+          try {
+            const chunk = JSON.parse(payload);
+            yield chunk;
+          } catch (e) {
+            // Ignore incomplete or empty JSON
+          }
+        }
+      }
+    }
+  },
+
   streamPost: async function* (endpoint, data) {
     // Basic retry logic for streaming
     let options = {

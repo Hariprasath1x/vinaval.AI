@@ -13,7 +13,7 @@ from app.schemas.quiz import (
     QuizReviewRequest,
     QuizReviewResponse,
 )
-from app.rag.chain import generate_mcqs, generate_quiz_review, generate_performance_analysis
+from app.rag.chain import generate_mcqs, generate_mcqs_stream, generate_quiz_review, generate_performance_analysis
 from app.services.performance_analyzer import performance_analyzer
 from app.models.quiz import PerformanceAnalysis
 import json
@@ -24,6 +24,77 @@ class QuizService:
         self.db = db
         self.repo = QuizRepository(db)
 
+    
+    async def generate_questions_stream(
+        self, space: LearningSpace, req: GenerateQuestionsRequest
+    ):
+        count = max(1, min(30, req.count))
+        lang = getattr(req, "lang", "en")
+        source_type = getattr(req, "source_type", "curriculum")
+
+        # Create session first so we can return its ID immediately
+        session = await self.repo.create_session(
+            space_id=space.id,
+            topic=req.topic,
+            total_questions=count, # Approximate, might be fewer
+            is_exam=(req.topic is None),
+            lang=lang,
+            source_type=source_type,
+        )
+
+        # Yield the session ID first
+        yield f"event: session\ndata: {json.dumps({'session_id': session.id})}\n\n"
+
+        valid_options = {"a", "b", "c", "d"}
+        
+        try:
+            async for q in generate_mcqs_stream(
+                exam=space.exam_id,
+                subject=space.subject,
+                topic=req.topic,
+                count=count,
+                lang=lang,
+                source_type=source_type,
+                space_id=space.id,
+            ):
+                if not all(k in q for k in ("question", "option_a", "option_b", "option_c", "option_d", "correct_option")):
+                    continue
+                if q["correct_option"].lower() not in valid_options:
+                    continue
+                
+                question_obj = QuizQuestion(
+                    space_id=space.id,
+                    topic=q.get("topic", req.topic or "Mixed Topics"),
+                    question=q["question"],
+                    option_a=q["option_a"],
+                    option_b=q["option_b"],
+                    option_c=q["option_c"],
+                    option_d=q["option_d"],
+                    correct_option=q["correct_option"].lower(),
+                    explanation=q.get("explanation"),
+                    source_type=source_type,
+                )
+                
+                # Save to DB individually
+                saved_q = (await self.repo.bulk_save_questions([question_obj]))[0]
+                
+                # Yield to frontend
+                q_dict = {
+                    "id": saved_q.id,
+                    "question": saved_q.question,
+                    "option_a": saved_q.option_a,
+                    "option_b": saved_q.option_b,
+                    "option_c": saved_q.option_c,
+                    "option_d": saved_q.option_d,
+                    "explanation": saved_q.explanation,
+                    "topic": saved_q.topic
+                }
+                yield f"event: question\ndata: {json.dumps(q_dict)}\n\n"
+        except Exception as e:
+            yield f"event: error\ndata: {json.dumps({'error': str(e)})}\n\n"
+        finally:
+            yield "event: complete\ndata: {}\n\n"
+            
     async def generate_questions(
         self, space: LearningSpace, req: GenerateQuestionsRequest
     ) -> dict:

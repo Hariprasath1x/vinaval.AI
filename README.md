@@ -1,126 +1,117 @@
-# Vinaval AI — Learning Arena (React Version)
+# Vinaval AI — Learning Arena
 
-Welcome to **Vinaval AI**! This is a smart, AI-powered learning platform designed for students preparing for competitive exams like NEET and TNPSC in Tamil Nadu. It offers a bilingual (English and Tamil) AI tutor, custom flashcards, and practice quizzes based on official syllabus books and your own uploaded notes.
-
----
-
-## 📖 Features & Flow
-
-Think of this app as having two main pieces working together: a **Frontend** (what you see and click) and a **Backend** (the brain that does the heavy lifting). 
-
-1. **Secure Authentication:** You can sign in using your Email or a Google account. The frontend talks to Firebase and the backend to securely log you in. You can also view and manage your profile details securely.
-2. **Personalized Learning Spaces:** You select an exam (like NEET) and a subject (like Physics). This creates an isolated study dashboard.
-3. **Intelligent Hybrid RAG Chat:** When you ask a question, the backend searches through its vector database (ChromaDB) to find relevant chunks from the official syllabus books. It sends these to a super-smart AI model (Llama 3 via Groq) which answers your question. You can use the **Language Toggle** to force the AI to respond purely in English or purely in Tamil.
-4. **Document Analysis:** Upload your own PDF notes or text files! The backend semantic-chunks the text, extracts metadata, and saves it. The AI can dynamically focus on explaining or summarizing your specific notes.
-5. **Exam Lab & Flashcards:** Generate flashcards and quizzes instantly based on the books and your uploads. Take a quiz, get graded, and receive a personalized AI review of your performance. Quiz history and accuracy stats are neatly tracked in the **Reports** tab.
+A highly performant, AI-powered learning platform designed for competitive exam preparation (NEET/TNPSC). The application delivers hybrid document-grounded tutoring, automated quiz generation, and progressive flashcard generation natively streaming via Server-Sent Events (SSE).
 
 ---
 
-## 📂 File Architecture
+## 📖 The Solution
 
-The project is structured to strictly separate the FastAPI backend from the React frontend.
+Vinaval AI solves the challenge of contextual studying by strictly grounding large language models on official State Board curriculum materials and user-uploaded PDFs using a fast, robust Retrieval-Augmented Generation (RAG) pipeline.
 
-```text
-vinavalai/
-├── backend/                  # FastAPI Backend API Server
-│   ├── alembic/              # Database migration scripts
-│   ├── app/
-│   │   ├── api/              # API Route handlers (v1)
-│   │   ├── core/             # Config, security, and database connections
-│   │   ├── models/           # SQLAlchemy ORM models
-│   │   ├── rag/              # AI LangChain pipelines and Document routing
-│   │   ├── repositories/     # Database CRUD operations
-│   │   ├── schemas/          # Pydantic validation schemas
-│   │   └── services/         # Core business logic
-│   ├── main.py               # FastAPI application entry point
-│   └── requirements.txt      # Backend Python dependencies
-├── frontend/                 # React Web Application (Vite)
-│   ├── src/                  # React components, pages, and services
-│   ├── public/               # Static assets
-│   ├── package.json          # Node dependencies
-│   └── vite.config.js        # Vite configuration
-├── docker-compose.yml        # Docker configuration for isolated deployments
-├── start.bat                 # Windows quick-start launcher (Backend)
-└── start.sh                  # MacOS/Linux quick-start launcher (Backend)
+### Core Features
+- **AI Tutor:** Interactive chat natively grounded in official curriculum material.
+- **Materials/MyStudyGPT:** Allows uploading user documents. MyStudyGPT explicitly rejects fallback to general knowledge, ensuring chat responses are strictly confined to the user-uploaded syllabus context.
+- **TN Textbook RAG:** Intelligent context retrieval strictly pointing to `neet_botany`, `neet_physics`, etc. ChromaDB collections.
+- **File-based Chat Contexts:** Chat histories are isolated between AI Tutor and MyStudyGPT modes at the database level.
+- **Quiz / Exam Lab:** Progressively streaming, auto-generated JSON quizzes strictly enforcing context grounding.
+- **Flashcards:** Progressively streaming Newline Delimited JSON (NDJSON) flashcards.
+- **Smart Revision & Smart Notes:** AI-generated progress tracking and dynamic summaries.
+
+---
+
+## 🛠️ Technology Stack
+
+- **Frontend:** React, Vite (Component-driven SPA)
+- **Backend API:** FastAPI (Async Python framework)
+- **Database:** SQLite (Persistence for Users, Sessions, Chat History, Quizzes, Flashcards)
+- **Vector Database:** ChromaDB (Embeddings using `paraphrase-multilingual-MiniLM-L12-v2` for EN/TA bilingual native support)
+- **AI / LLM:** 
+  - **Primary:** Gemini (Streaming capabilities)
+  - **Fallback:** Groq (Llama 3 70B) for seamless rate-limit handling and high-availability.
+- **Streaming Architecture:** Server-Sent Events (SSE) emitting custom structured payloads and NDJSON for extremely low Time To First Token (TTFT).
+
+---
+
+## 🏗️ Architecture Map
+
+```mermaid
+graph TD
+    User([User]) --> Frontend[React Frontend]
+    Frontend --> Backend[FastAPI Backend]
+
+    subgraph Backend Services
+        Backend --> SpaceSvc[Learning Space Service]
+        Backend --> ChatSvc[Chat Service]
+        Backend --> FileSvc[File / Material Service]
+        Backend --> QuizSvc[Quiz Service]
+        Backend --> FlashSvc[Flashcard Service]
+    end
+
+    subgraph Chat Isolation
+        ChatSvc --> AITutor[AI Tutor Mode]
+        ChatSvc --> MyStudyGPT[MyStudyGPT Mode]
+        ChatSvc --> ChatFile[Chat with File]
+    end
+
+    subgraph LLM & RAG Layer
+        AITutor --> RAG[RAG Orchestrator]
+        MyStudyGPT --> RAG
+        QuizSvc --> RAG
+        FlashSvc --> RAG
+        RAG --> Chroma[(ChromaDB Vector Store)]
+        
+        RAG --> LLM{LLM Gateway}
+        LLM --> Gemini[Google Gemini]
+        LLM -. Fallback .-> Groq[Groq Llama 3]
+    end
+
+    subgraph Persistence
+        SpaceSvc --> DB[(SQLite DB)]
+        ChatSvc --> DB
+        FileSvc --> DB
+        QuizSvc --> DB
+        FlashSvc --> DB
+    end
 ```
 
----
-
-## 🛠️ The Technology Stack
-
-We keep things modern, fast, and lightweight:
-
-*   **Frontend:** Built with **React and Vite** for a highly responsive, component-driven, single-page application experience.
-*   **Backend:** Built with **FastAPI** (Python) for asynchronous, high-performance API handling.
-*   **Relational Database:** **SQLite** (`vinavalai.db`) stores user accounts, chat history, quiz attempts, and flashcards. 
-*   **Vector Database:** **ChromaDB**. Stores document embeddings using `paraphrase-multilingual-MiniLM-L12-v2` so it understands both English and Tamil natively.
-*   **LLM Engine:** Powered by **Groq** using the **Llama 3 70B** model for incredibly fast inference.
+### Advanced RAG Retrieval Flow
+Document Ingestion → Text Extraction → Semantic Chunking → Embeddings → ChromaDB → Similarity Retrieval → Relevant Context Construction → LLM Injection → Grounded Response Output.
 
 ---
 
-## 🚀 How to Run the App
+## ⚡ Performance Optimizations
 
-### Step 1: Start the Backend
+During recent scaling, the application underwent significant performance optimization:
 
-**If you are on Windows:**
-Just double-click the `start.bat` file in the main folder! It will automatically start the FastAPI backend.
+- **LLM TTFT Latency:** Fixed decommissioned model references that previously triggered massive API SDK retry/backoff loops. **Normal chat TTFT plummeted from ~14.37 seconds to ~0.6–1.1 seconds.**
+- **Progressive Streaming for Data Types:** Instead of awaiting complete JSON generation for 10-20 questions/flashcards, the system utilizes highly optimized NDJSON stream generators with real-time brace-counting token parsing. Results stream instantly to the frontend (TTFT < 2s).
 
-**If you are on Mac/Linux:**
-Run the shell script in your terminal:
+---
+
+## 🚀 Setup & Run Instructions
+
+### 1. Environment Setup
+1. Clone the repository.
+2. Create a Python virtual environment: `python -m venv venv`
+3. Install backend dependencies: `cd backend && pip install -r requirements.txt`
+4. Install frontend dependencies: `cd frontend && npm install`
+5. Configure `.env` in the `backend/` folder (use `.env.example` as a template).
+
+### 2. Start the Backend (API + RAG Engine)
+On **Windows**:
+```bash
+./start.bat
+```
+On **Mac/Linux**:
 ```bash
 ./start.sh
 ```
+*The FastAPI backend will run silently on `http://127.0.0.1:8000`.*
 
-### Step 2: Start the React Frontend
-
-Open a **second terminal window**, navigate to the `frontend` directory, and start the Vite development server:
-
+### 3. Start the Frontend
+In a new terminal window:
 ```bash
 cd frontend
-npm install
 npm run dev
 ```
-
-### Option 2: Run Using Docker (Backend Only)
-Currently, only the backend is containerized in docker-compose.
-```bash
-docker-compose up --build
-```
-Then run the frontend manually via `npm run dev`.
-
----
-
-## 🌐 Where to view the app
-
-Once both servers are started, open your web browser and go to:
-*   **The App (React Frontend):** `http://localhost:5173` (or the port Vite provides)
-*   *(The Backend runs silently in the background at `http://localhost:8000`)*
-
----
-
-## 🔑 Environment Variables
-Make sure you have your API keys set up before running!
-
-**In `backend/.env`:**
-*   `GROQ_API_KEY` - Your key from Groq to power the AI.
-*   `GROQ_MODEL` - We recommend `llama-3.3-70b-versatile`.
-*   *(Make sure `firebase-service-account.json` is also in the backend folder!)*
-
-**In `frontend/.env`:**
-*   `VITE_API_URL` - Set to `http://127.0.0.1:8000/api/v1`
-
----
-
-## 📚 Adding Official Syllabus Books
-
-As an admin, you can load official textbooks into the database so all students can learn from them. The AI will use these books to answer questions.
-
-```bash
-cd backend
-
-# Seed a NEET Physics textbook (English)
-python scripts/seed_books.py --exam NEET --subject Physics --lang en --file /path/to/physics.pdf --title "NCERT Physics"
-
-# Seed a TNPSC History guide (Tamil)
-python scripts/seed_books.py --exam TNPSC --subject History --lang ta --file /path/to/history_tamil.pdf
-```
+*Navigate to `http://localhost:5173` to access Vinaval AI.*

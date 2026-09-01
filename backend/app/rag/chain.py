@@ -76,10 +76,12 @@ async def _llm_complete(
             }
             if response_mime_type:
                 gen_config_kwargs["response_mime_type"] = response_mime_type  # type: ignore
-                
+
+            from google.api_core import retry_async, retry
             response = await model.generate_content_async(
                 contents=[{"role": "user", "parts": [prompt]}],
                 generation_config=genai.types.GenerationConfig(**gen_config_kwargs),  # type: ignore
+                request_options={"retry": retry_async.AsyncRetry(predicate=retry.if_transient_error), "timeout": 15.0}
             )
             text = response.text.strip() if response.text else ""
             if text:
@@ -112,6 +114,64 @@ async def _llm_complete(
                     raise ValueError("LLM completion failed for both Gemini and Groq")
             else:
                 raise ValueError(f"LLM completion failed: {e}")
+    else:
+        raise ValueError("No GEMINI_API_KEY configured on the server.")
+
+
+async def _llm_complete_stream(
+    prompt: str,
+    max_tokens: int = 3000,
+    temperature: float = 0.5,
+    system_instruction: Optional[str] = None,
+) -> AsyncGenerator[str, None]:
+    if settings.GEMINI_API_KEY:
+        try:
+            genai.configure(api_key=settings.GEMINI_API_KEY)
+            model = genai.GenerativeModel(
+                settings.GEMINI_MODEL,
+                system_instruction=system_instruction,
+            )
+            gen_config_kwargs = {
+                "max_output_tokens": max_tokens,
+                "temperature": temperature,
+            }
+            from google.api_core import retry_async, retry
+            response_stream = await model.generate_content_async(
+                contents=[{"role": "user", "parts": [prompt]}],
+                generation_config=genai.types.GenerationConfig(**gen_config_kwargs),
+                stream=True,
+                request_options={"retry": retry_async.AsyncRetry(predicate=retry.if_transient_error), "timeout": 15.0}
+            )
+            async for chunk in response_stream:
+                if chunk.text:
+                    yield chunk.text
+            return
+        except Exception as e:
+            logger.error(f"[LLM] Gemini stream failed: {e}. Falling back to Groq.")
+            if settings.GROQ_API_KEY:
+                try:
+                    from groq import AsyncGroq
+                    client = AsyncGroq(api_key=settings.GROQ_API_KEY)
+                    messages = []
+                    if system_instruction:
+                        messages.append({"role": "system", "content": system_instruction})
+                    messages.append({"role": "user", "content": prompt})
+                    stream = await client.chat.completions.create(
+                        messages=messages,
+                        model=settings.GROQ_MODEL,
+                        temperature=temperature,
+                        max_tokens=max_tokens,
+                        stream=True,
+                    )
+                    async for chunk in stream:
+                        if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
+                            yield chunk.choices[0].delta.content
+                    return
+                except Exception as groq_e:
+                    logger.error(f"[LLM] Groq fallback stream failed: {groq_e}")
+                    raise ValueError("LLM stream failed for both Gemini and Groq")
+            else:
+                raise ValueError(f"LLM stream failed: {e}")
     else:
         raise ValueError("No GEMINI_API_KEY configured on the server.")
 
@@ -245,21 +305,21 @@ fully master {subject} and crack {exam} with confidence!
 
 """
 
-# System prompt used when active file context is set — stricter grounding
+# System prompt used when active file context is set or mode is my_study_gpt — stricter grounding
 DOCUMENT_SYSTEM_PROMPT = """\
 {lang_enforcement}\
-You are Vinaval AI — an AI tutor helping a student understand their uploaded study notes.
+You are Vinaval AI — an AI tutor helping a student understand their study materials.
 
-Active document: **{filename}**
+{filename_str}
 Subject: {exam} → {subject}
 
 ### CRITICAL RULES:
-1. Answer STRICTLY based on the content provided in the "### Document Content" section below.
+1. Answer STRICTLY based on the content provided in the "### Document Content" or "### Context from Your Study Materials" section below.
 2. If a topic is covered in the content, explain it clearly and thoroughly.
 3. If a topic is NOT present in the content, say explicitly:
-   "The uploaded document does not contain details about [topic]. Here is what I know from the syllabus: ..."
-   — then provide a brief general answer. Never hallucinate silently.
-4. Always attribute your answer to the uploaded document when using it.
+   "I couldn't find enough relevant information in your selected materials to answer this confidently. Try selecting a relevant material or asking about a topic covered in it."
+   — DO NOT provide a general answer. Never hallucinate silently. Do NOT substitute information from NCERT, NTA, AIPMT, coaching material, external books, or general model knowledge.
+4. Always attribute your answer to the supplied materials when using it.
 5. NEVER cut off your response abruptly. Always wrap up your explanation logically within a reasonable length. If you cannot fit the full answer, summarize it instead of trailing off.
 
 ### Language:
@@ -661,11 +721,12 @@ def _build_system_prompt(
             lang_enforcement=lang_enforcement,
         )
 
-    if filename:
+    if mode == "my_study_gpt" or filename:
+        filename_str = f"Active document: **{filename}**" if filename else "Source: User Study Materials"
         return DOCUMENT_SYSTEM_PROMPT.format(
             exam=exam,
             subject=subject,
-            filename=filename,
+            filename_str=filename_str,
             lang_block=lang_block,
             lang_enforcement=lang_enforcement,
             context_block=context_block,
@@ -720,34 +781,62 @@ async def stream_chat(
         n_topics = 0
         filename = active_doc_filename
         try:
-            if mode == "my_study_gpt" and space_id:
-                intent = "QUESTION"
-                logger.info(f"[RAG] Mode: My Study GPT, querying user space_id={space_id}")
-                context_block, n_chunks = _retrieve_user_context(exam, subject, user_message, space_id, n_results=4)
-            elif active_doc_id:
-                if intent == "LIST_TOPICS":
-                    topics = _get_topics_from_metadata(exam, subject, active_doc_id)
-                    n_topics = len(topics)
-                    if topics:
-                        topic_lines = "\n".join(f"- {t}" for t in topics)
-                        context_block = f"### Topics in the uploaded document:\n{topic_lines}\n"
+            if mode == "my_study_gpt":
+                if active_doc_id:
+                    if intent == "LIST_TOPICS":
+                        topics = _get_topics_from_metadata(exam, subject, active_doc_id)
+                        n_topics = len(topics)
+                        if topics:
+                            topic_lines = "\n".join(f"- {t}" for t in topics)
+                            context_block = f"### Topics in the uploaded document:\n{topic_lines}\n"
+                        else:
+                            context_block = "### Note: No specific topic headings were detected in this document.\n"
+                    elif intent in ("EXPLAIN_DOCUMENT", "SUMMARIZE_DOCUMENT", "GENERATE_NOTES",
+                                    "GENERATE_QUIZ", "GENERATE_FLASHCARDS"):
+                        context_block, n_chunks, found_topics = _load_all_doc_chunks(exam, subject, active_doc_id)
+                        n_topics = len(found_topics)
                     else:
-                        context_block = "### Note: No specific topic headings were detected in this document.\n"
-                elif intent in ("EXPLAIN_DOCUMENT", "SUMMARIZE_DOCUMENT", "GENERATE_NOTES",
-                                "GENERATE_QUIZ", "GENERATE_FLASHCARDS"):
-                    context_block, n_chunks, found_topics = _load_all_doc_chunks(exam, subject, active_doc_id)
-                    n_topics = len(found_topics)
-                else:
-                    context_block, n_chunks = _retrieve_doc_context(
-                        exam, subject, user_message, active_doc_id, n_results=3
-                    )
+                        intent = "QUESTION"
+                        context_block, n_chunks = _retrieve_doc_context(
+                            exam, subject, user_message, active_doc_id, n_results=3
+                        )
+                elif space_id:
+                    intent = "QUESTION"
+                    logger.info(f"[RAG] Mode: My Study GPT, querying user space_id={space_id}")
+                    context_block, n_chunks = _retrieve_user_context(exam, subject, user_message, space_id, n_results=4)
+                    
+                if n_chunks == 0 and intent == "QUESTION":
+                    # For My Study GPT, do not fall back to syllabus RAG or general knowledge. Just yield error.
+                    yield "I couldn't find enough relevant information in your selected materials to answer this confidently. Try selecting a relevant material or asking about a topic covered in it."
+                    return
+                    
             else:
-                intent = "QUESTION"
-                context_block, n_chunks = _retrieve_syllabus_context(exam, subject, user_message, n_results=3)
-                
-            if n_chunks == 0 and intent == "QUESTION" and not active_doc_id and mode != "my_study_gpt":
-                # No chunks retrieved - switch to Fallback mode
-                mode = "fallback"
+                # mode == "ai_tutor"
+                if active_doc_id:
+                    if intent == "LIST_TOPICS":
+                        topics = _get_topics_from_metadata(exam, subject, active_doc_id)
+                        n_topics = len(topics)
+                        if topics:
+                            topic_lines = "\n".join(f"- {t}" for t in topics)
+                            context_block = f"### Topics in the uploaded document:\n{topic_lines}\n"
+                        else:
+                            context_block = "### Note: No specific topic headings were detected in this document.\n"
+                    elif intent in ("EXPLAIN_DOCUMENT", "SUMMARIZE_DOCUMENT", "GENERATE_NOTES",
+                                    "GENERATE_QUIZ", "GENERATE_FLASHCARDS"):
+                        context_block, n_chunks, found_topics = _load_all_doc_chunks(exam, subject, active_doc_id)
+                        n_topics = len(found_topics)
+                    else:
+                        intent = "QUESTION"
+                        context_block, n_chunks = _retrieve_doc_context(
+                            exam, subject, user_message, active_doc_id, n_results=3
+                        )
+                else:
+                    intent = "QUESTION"
+                    context_block, n_chunks = _retrieve_syllabus_context(exam, subject, user_message, n_results=3)
+                    
+                if n_chunks == 0 and intent == "QUESTION" and not active_doc_id:
+                    # AI Tutor can fall back to general knowledge if syllabus RAG yields 0 chunks.
+                    mode = "fallback"
                 
         except RAGSystemError:
             # If ChromaDB fails entirely, yield a friendly error message and stop.
@@ -906,26 +995,17 @@ for {exam} {subject}.
 ### Output Language:
 {lang_instruction}
 
-STRICT OUTPUT FORMAT — respond ONLY with a valid JSON array, no other text:
-[
-  {{
-    "topic": "Specific chapter or topic name",
-    "question": "Full question text here?",
-    "option_a": "First option",
-    "option_b": "Second option",
-    "option_c": "Third option",
-    "option_d": "Fourth option",
-    "correct_option": "a",
-    "explanation": "Brief explanation of why the answer is correct."
-  }}
-]
+STRICT OUTPUT FORMAT — respond ONLY with Newline Delimited JSON (NDJSON).
+Each question MUST be a single, flat JSON object on its own line, with NO line breaks inside the object.
+Example:
+{{"topic": "Specific chapter or topic name", "question": "Full question text here?", "option_a": "First option", "option_b": "Second option", "option_c": "Third option", "option_d": "Fourth option", "correct_option": "a", "explanation": "Brief explanation of why the answer is correct."}}
 
 Rules:
+- Each object on a new line.
 - Each question must have exactly 4 options (a, b, c, d).
 - correct_option must be one of: "a", "b", "c", "d".
 - Questions should be exam-level difficulty.
-- No duplicate questions.
-- Output ONLY the JSON array — absolutely no markdown, no code fences, no text outside the JSON.
+- Output ONLY the raw JSON lines — absolutely no markdown, no code fences, no array brackets.
 """
 
 _MCQ_LANG_INSTRUCTIONS = {
@@ -986,7 +1066,6 @@ async def generate_mcqs(
             batch_prompt, 
             max_tokens=4096, 
             temperature=0.5,
-            model_override="gemini-1.5-flash",
             response_mime_type="application/json"
         )
         logger.info(f"[TELEMETRY] generate_mcqs batch {batch_index} LLM time: {time.perf_counter() - t0:.3f}s for {batch_count} Qs")
@@ -1047,20 +1126,17 @@ for {exam} {subject}.
 ### Output Language:
 {lang_instruction}
 
-STRICT OUTPUT FORMAT — respond ONLY with a valid JSON array, no other text:
-[
-  {{
-    "front": "Term or question here?",
-    "back": "Definition or answer here."
-  }}
-]
+STRICT OUTPUT FORMAT — respond ONLY with Newline Delimited JSON (NDJSON).
+Each flashcard MUST be a single, flat JSON object on its own line, with NO line breaks inside the object.
+Example:
+{{"front": "Term or question here?", "back": "Definition or answer here."}}
 
 Rules:
-- front: a concise term, concept, formula label, or question (max 2 lines).
-- back: a clear, complete explanation or answer (2–4 sentences max).
+- Each object on a new line.
+- front: a concise term, concept, formula label, or question.
+- back: a clear, complete explanation or answer.
 - Flashcards must be exam-relevant and factually accurate.
-- No duplicate fronts.
-- Output ONLY the JSON array — no markdown, no code fences, no extra text.
+- Output ONLY the raw JSON lines — absolutely no markdown, no code fences, no array brackets.
 """
 
 _FLASH_LANG_INSTRUCTIONS = {
@@ -1104,7 +1180,6 @@ async def generate_flashcards(
             batch_prompt, 
             max_tokens=4096, 
             temperature=0.4,
-            model_override="gemini-1.5-flash",
             response_mime_type="application/json"
         )
         logger.info(f"[TELEMETRY] generate_flashcards batch {batch_index} LLM time: {time.perf_counter() - t0:.3f}s for {batch_count} cards")
@@ -1246,3 +1321,162 @@ async def generate_performance_analysis(
             "overall_summary": "Excellent effort on completing the test.",
             "ai_narrative": "Your performance data was processed successfully."
         }
+
+async def generate_mcqs_stream(
+    exam: str,
+    subject: str,
+    topic: Optional[str] = None,
+    count: int = 5,
+    lang: str = "en",
+    source_type: str = "curriculum",
+    space_id: Optional[int] = None,
+) -> AsyncGenerator[Dict, None]:
+    search_query = topic if topic else f"{exam} {subject} syllabus overview"
+    
+    if source_type == "user" and space_id:
+        context_block, chunk_count = _retrieve_user_context(exam, subject, search_query, space_id, n_results=5 if not topic else 3)
+        if chunk_count > 0 and len(context_block) < 500:
+            syl_context, _ = _retrieve_syllabus_context(exam, subject, search_query, n_results=2)
+            context_block += "\n\n### Additional Reference Material:\n" + syl_context
+    else:
+        context_block, _ = _retrieve_syllabus_context(exam, subject, search_query, n_results=5 if not topic else 3)
+        
+    if context_block:
+        if len(context_block) > 15000:
+            context_block = context_block[:15000] + "\n...[truncated]"
+        context_block = (
+            "### Reference Material from Syllabus:\n" + context_block +
+            "\nBase your questions on this material where possible.\n"
+        )
+
+    lang_instruction = _MCQ_LANG_INSTRUCTIONS.get(lang, _MCQ_LANG_INSTRUCTIONS["en"])
+
+    batch_prompt = MCQ_SYSTEM.format(
+        exam=exam,
+        subject=subject,
+        topic_instruction=f'Generate exactly {count} multiple-choice questions on the topic: "{topic}"' if topic else f'Generate exactly {count} multiple-choice questions covering diverse topics',
+        count=count,
+        context_block=context_block,
+        lang_instruction=lang_instruction,
+    )
+    
+    buffer = ""
+    brace_count = 0
+    obj_str = ""
+    async for chunk in _llm_complete_stream(batch_prompt, max_tokens=4096, temperature=0.5):
+        buffer += chunk
+        while buffer:
+            if brace_count == 0:
+                start = buffer.find("{")
+                if start == -1:
+                    buffer = ""
+                    break
+                buffer = buffer[start:]
+                brace_count = 1
+                obj_str = "{"
+                buffer = buffer[1:]
+            
+            # Find the next { or }
+            next_open = buffer.find("{")
+            next_close = buffer.find("}")
+            
+            if next_close == -1:
+                obj_str += buffer
+                buffer = ""
+                break
+                
+            if next_open != -1 and next_open < next_close:
+                brace_count += 1
+                obj_str += buffer[:next_open + 1]
+                buffer = buffer[next_open + 1:]
+            else:
+                brace_count -= 1
+                obj_str += buffer[:next_close + 1]
+                buffer = buffer[next_close + 1:]
+                
+                if brace_count == 0:
+                    try:
+                        obj = json.loads(obj_str)
+                        yield obj
+                    except Exception:
+                        pass
+                    obj_str = ""
+
+
+async def generate_flashcards_stream(
+    exam: str,
+    subject: str,
+    topic: str,
+    count: int = 10,
+    lang: str = "en",
+    source_type: str = "curriculum",
+    space_id: Optional[int] = None,
+) -> AsyncGenerator[Dict, None]:
+    if source_type == "user" and space_id:
+        context_block, chunk_count = _retrieve_user_context(exam, subject, topic, space_id, n_results=5)
+        if chunk_count > 0 and len(context_block) < 500:
+            syl_context, _ = _retrieve_syllabus_context(exam, subject, topic, n_results=2)
+            context_block += "\n\n### Additional Reference Material:\n" + syl_context
+    else:
+        context_block, _ = _retrieve_syllabus_context(exam, subject, topic, n_results=5)
+
+    if context_block:
+        if len(context_block) > 15000:
+            context_block = context_block[:15000] + "\n...[truncated]"
+        context_block = (
+            "### Reference Material from Syllabus:\n" + context_block +
+            "\nBase your flashcards on this material where possible.\n"
+        )
+
+    lang_instruction = _FLASH_LANG_INSTRUCTIONS.get(lang, _FLASH_LANG_INSTRUCTIONS["en"])
+
+    batch_prompt = FLASHCARD_SYSTEM.format(
+        exam=exam,
+        subject=subject,
+        topic=topic,
+        count=count,
+        context_block=context_block,
+        lang_instruction=lang_instruction,
+    )
+    
+    buffer = ""
+    brace_count = 0
+    obj_str = ""
+    async for chunk in _llm_complete_stream(batch_prompt, max_tokens=4096, temperature=0.5):
+        buffer += chunk
+        while buffer:
+            if brace_count == 0:
+                start = buffer.find("{")
+                if start == -1:
+                    buffer = ""
+                    break
+                buffer = buffer[start:]
+                brace_count = 1
+                obj_str = "{"
+                buffer = buffer[1:]
+            
+            # Find the next { or }
+            next_open = buffer.find("{")
+            next_close = buffer.find("}")
+            
+            if next_close == -1:
+                obj_str += buffer
+                buffer = ""
+                break
+                
+            if next_open != -1 and next_open < next_close:
+                brace_count += 1
+                obj_str += buffer[:next_open + 1]
+                buffer = buffer[next_open + 1:]
+            else:
+                brace_count -= 1
+                obj_str += buffer[:next_close + 1]
+                buffer = buffer[next_close + 1:]
+                
+                if brace_count == 0:
+                    try:
+                        obj = json.loads(obj_str)
+                        yield obj
+                    except Exception:
+                        pass
+                    obj_str = ""

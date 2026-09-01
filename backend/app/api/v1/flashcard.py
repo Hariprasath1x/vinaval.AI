@@ -1,5 +1,6 @@
 from typing import List, Optional
 from fastapi import APIRouter, Depends, Query, status, Request
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.rate_limit import limiter
 
@@ -16,11 +17,7 @@ from app.schemas.flashcard import (
 router = APIRouter(prefix="/spaces", tags=["Flashcards"])
 
 
-@router.post(
-    "/{space_id}/flashcards/generate",
-    response_model=List[FlashcardOut],
-    status_code=status.HTTP_201_CREATED,
-)
+@router.post("/{space_id}/flashcards/generate")
 @limiter.limit("5/minute")
 async def generate_flashcards(
     request: Request,
@@ -33,7 +30,14 @@ async def generate_flashcards(
     space_svc = SpaceService(db)
     space = await space_svc.get_space(space_id, current_user.id)
     fc_svc = FlashcardService(db)
-    return await fc_svc.generate(space, body)
+    return StreamingResponse(
+        fc_svc.generate_stream(space, body),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        }
+    )
 
 
 @router.get("/{space_id}/flashcards", response_model=List[FlashcardOut])
