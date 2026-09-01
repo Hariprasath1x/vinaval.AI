@@ -161,24 +161,34 @@ export default function ExamLabTab({ spaceId, space, onTabChange }) {
 
     setGenerating(true);
     try {
-      const data = await api.post(`/spaces/${spaceId}/quiz/generate`, {
+      setQuestions([]);
+      setSessionId(null);
+      setAnswers({});
+      setSubmitted(false);
+      setShowAnalysis(false);
+      setAnalysis(null);
+      setQuizTopic(targetTopic);
+      
+      if (isExamMode) {
+        setTimeRemaining(MOCK_EXAM_DURATION_SECONDS);
+      }
+
+      const stream = api.streamObjects(`/spaces/${spaceId}/quiz/generate`, {
         topic: isExamMode ? null : targetTopic,
         count: parseInt(count),
         lang,
         source_type: sourceType,
       });
 
-      if (data && data.questions) {
-        setQuestions(data.questions);
-        setSessionId(data.session_id);
-        setAnswers({});
-        setSubmitted(false);
-        setShowAnalysis(false);
-        setAnalysis(null);
-        setQuizTopic(targetTopic);
-        
-        if (isExamMode) {
-          setTimeRemaining(MOCK_EXAM_DURATION_SECONDS);
+      for await (const msg of stream) {
+        if (msg.event === "session") {
+          setSessionId(msg.data.session_id);
+        } else if (msg.event === "question") {
+          setQuestions(prev => [...prev, msg.data]);
+        } else if (msg.event === "complete") {
+          // Quiz generation complete
+        } else if (msg.event === "error") {
+          alert("Generation error: " + (msg.data.detail || JSON.stringify(msg.data)));
         }
       }
     } catch (err) {
@@ -285,7 +295,7 @@ export default function ExamLabTab({ spaceId, space, onTabChange }) {
             </div>
             
             <div className="form-group">
-              <label># Questions</label>
+              <label>Number of Questions</label>
               <input 
                 type="number" 
                 min="1" max="30" 

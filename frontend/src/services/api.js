@@ -185,18 +185,30 @@ export const api = {
       if (done) break;
       
       buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || ""; 
+      const messages = buffer.split('\n\n');
+      buffer = messages.pop() || "";
       
-      for (const line of lines) {
-        if (line.startsWith("data: ")) {
-          const payload = line.substring(6);
-          if (!payload) continue;
+      for (const message of messages) {
+        if (!message.trim()) continue;
+        
+        let eventName = "message";
+        let eventData = "";
+        
+        const lines = message.split('\n');
+        for (const line of lines) {
+          if (line.startsWith("event: ")) {
+            eventName = line.substring(7).trim();
+          } else if (line.startsWith("data: ")) {
+            eventData += line.substring(6);
+          }
+        }
+        
+        if (eventData) {
           try {
-            const chunk = JSON.parse(payload);
-            yield chunk;
+            const parsedData = JSON.parse(eventData);
+            yield { event: eventName, data: parsedData };
           } catch (e) {
-            // Ignore incomplete or empty JSON
+            // ignore malformed JSON
           }
         }
       }

@@ -53,20 +53,30 @@ export default function FlashcardsTab({ spaceId, space }) {
     }
 
     setGenerating(true);
+    setQueue([]);
+    setMastered(0);
+    setTotal(0);
+    setActiveTopic(finalTopic);
+    setShowBack(false);
+
     try {
-      const cards = await api.post(`/spaces/${spaceId}/flashcards/generate`, {
+      const stream = api.streamObjects(`/spaces/${spaceId}/flashcards/generate`, {
         topic: finalTopic,
         count: parseInt(count),
         lang
       });
 
-      if (cards && cards.length > 0) {
-        setQueue(cards);
-        setMastered(0);
-        setTotal(cards.length);
-        setActiveTopic(finalTopic);
-        setShowBack(false);
-        loadSavedTopics(); // Refresh saved topics list
+      for await (const msg of stream) {
+        if (msg.event === "deck") {
+          // Deck initialized
+        } else if (msg.event === "flashcard") {
+          setQueue(prev => [...prev, msg.data]);
+          setTotal(prev => prev + 1);
+        } else if (msg.event === "complete") {
+          loadSavedTopics();
+        } else if (msg.event === "error") {
+          alert("Generation error: " + (msg.data.detail || JSON.stringify(msg.data)));
+        }
       }
     } catch (err) {
       alert("Generation failed: " + err.message);
