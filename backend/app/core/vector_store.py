@@ -341,6 +341,12 @@ def get_vector_store() -> VectorStoreInterface:
         if provider == "pinecone":
             _store = PineconeVectorStore()
         else:
+            if getattr(settings, "APP_ENV", "development") == "production":
+                raise ValueError(
+                    "Production requires VECTOR_STORE_PROVIDER=pinecone. "
+                    f"Invalid provider found: '{provider}'. "
+                    "Cannot silently fall back to local Chroma."
+                )
             logger.info("[VECTOR] Provider=chroma")
             _store = ChromaVectorStore()
     return _store
