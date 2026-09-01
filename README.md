@@ -9,13 +9,13 @@ A highly performant, AI-powered learning platform designed for competitive exam 
 Vinaval AI solves the challenge of contextual studying by strictly grounding large language models on official State Board curriculum materials and user-uploaded PDFs using a fast, robust Retrieval-Augmented Generation (RAG) pipeline.
 
 ### Core Features
-- **AI Tutor:** Interactive chat natively grounded in official curriculum material.
-- **Materials/MyStudyGPT:** Allows uploading user documents. MyStudyGPT explicitly rejects fallback to general knowledge, ensuring chat responses are strictly confined to the user-uploaded syllabus context.
-- **TN Textbook RAG:** Intelligent context retrieval strictly pointing to `neet_botany`, `neet_physics`, etc. ChromaDB collections.
-- **File-based Chat Contexts:** Chat histories are isolated between AI Tutor and MyStudyGPT modes at the database level.
-- **Quiz / Exam Lab:** Progressively streaming, auto-generated JSON quizzes strictly enforcing context grounding.
-- **Flashcards:** Progressively streaming Newline Delimited JSON (NDJSON) flashcards.
-- **Smart Revision & Smart Notes:** AI-generated progress tracking and dynamic summaries.
+- **AI Tutor:** Interactive chat natively grounded in official curriculum material via a robust vector retrieval system.
+- **My Study GPT & Materials:** Allows uploading user documents (PDFs, notes). The system extracts, chunks, and embeddings these documents, explicitly restricting chat responses to the user's uploaded syllabus context.
+- **TN Textbook RAG:** Intelligent context retrieval strictly pointing to exam-specific ChromaDB collections (e.g., `neet_physics`, `neet_botany_ta`).
+- **Exam Lab (Quiz Generator):** Progressively streaming, auto-generated JSON quizzes enforcing context grounding. Supports full mock exams and topic-based practice with built-in timers.
+- **Performance Analytics:** Comprehensive post-quiz result analysis, tracking user scores and history.
+- **Flashcards:** Progressively generated flashcard decks streamed via Server-Sent Events (SSE) for active recall studying.
+- **Bilingual Native Support:** Supports generation and querying in English and Tamil.
 
 ---
 
@@ -23,12 +23,13 @@ Vinaval AI solves the challenge of contextual studying by strictly grounding lar
 
 - **Frontend:** React, Vite (Component-driven SPA)
 - **Backend API:** FastAPI (Async Python framework)
-- **Database:** SQLite (Persistence for Users, Sessions, Chat History, Quizzes, Flashcards)
-- **Vector Database:** ChromaDB (Embeddings using `paraphrase-multilingual-MiniLM-L12-v2` for EN/TA bilingual native support)
+- **Database:** SQLite (Persistence for Users, Spaces, Chat History, Quizzes, Flashcards) using SQLAlchemy + `aiosqlite` and Alembic.
+- **Vector Database:** ChromaDB (Local Embeddings using `paraphrase-multilingual-MiniLM-L12-v2`)
+- **Authentication:** Firebase Admin SDK (JWT decoding and validation)
 - **AI / LLM:** 
-  - **Primary:** Gemini (Streaming capabilities)
-  - **Fallback:** Groq (Llama 3 70B) for seamless rate-limit handling and high-availability.
-- **Streaming Architecture:** Server-Sent Events (SSE) emitting custom structured payloads and NDJSON for extremely low Time To First Token (TTFT).
+  - **Primary:** Google Gemini (Streaming capabilities)
+  - **Fallback:** Groq (Llama 3) for seamless rate-limit handling and high-availability.
+- **Streaming Architecture:** Server-Sent Events (SSE) emitting structured event blocks for extremely low Time To First Token (TTFT).
 
 ---
 
@@ -49,8 +50,7 @@ graph TD
 
     subgraph Chat Isolation
         ChatSvc --> AITutor[AI Tutor Mode]
-        ChatSvc --> MyStudyGPT[MyStudyGPT Mode]
-        ChatSvc --> ChatFile[Chat with File]
+        ChatSvc --> MyStudyGPT[My Study GPT Mode]
     end
 
     subgraph LLM & RAG Layer
@@ -75,16 +75,16 @@ graph TD
 ```
 
 ### Advanced RAG Retrieval Flow
-Document Ingestion → Text Extraction → Semantic Chunking → Embeddings → ChromaDB → Similarity Retrieval → Relevant Context Construction → LLM Injection → Grounded Response Output.
+Document Ingestion → Text Extraction (`pymupdf` / `pdfplumber`) → Semantic Chunking → Embeddings → ChromaDB → Similarity Retrieval → Relevant Context Construction → LLM Injection → Grounded Response Output.
 
 ---
 
 ## ⚡ Performance Optimizations
 
-During recent scaling, the application underwent significant performance optimization:
+During scaling and stabilization, the application underwent significant performance optimizations:
 
-- **LLM TTFT Latency:** Fixed decommissioned model references that previously triggered massive API SDK retry/backoff loops. **Normal chat TTFT plummeted from ~14.37 seconds to ~0.6–1.1 seconds.**
-- **Progressive Streaming for Data Types:** Instead of awaiting complete JSON generation for 10-20 questions/flashcards, the system utilizes highly optimized NDJSON stream generators with real-time brace-counting token parsing. Results stream instantly to the frontend (TTFT < 2s).
+- **SSE Stream Processing:** Instead of awaiting complete JSON generation for multi-item arrays (like quizzes and flashcards), the system utilizes standard Server-Sent Events (SSE). Chunks are buffered safely across network boundaries, allowing the React frontend to progressively render questions and flashcards instantly.
+- **LLM TTFT Latency Reduction:** Fallback configurations seamlessly handle rate limits, ensuring continuous generation.
 
 ---
 
@@ -95,7 +95,8 @@ During recent scaling, the application underwent significant performance optimiz
 2. Create a Python virtual environment: `python -m venv venv`
 3. Install backend dependencies: `cd backend && pip install -r requirements.txt`
 4. Install frontend dependencies: `cd frontend && npm install`
-5. Configure `.env` in the `backend/` folder (use `.env.example` as a template).
+5. Configure `.env` in the `backend/` folder (use `backend/.env.example` as a template).
+6. Place your `firebase-service-account.json` in the `backend/` folder and link it in the `.env` file.
 
 ### 2. Start the Backend (API + RAG Engine)
 On **Windows**:
@@ -106,7 +107,7 @@ On **Mac/Linux**:
 ```bash
 ./start.sh
 ```
-*The FastAPI backend will run silently on `http://127.0.0.1:8000`.*
+*The FastAPI backend will automatically kill orphaned ports and run silently on `http://127.0.0.1:8000`.*
 
 ### 3. Start the Frontend
 In a new terminal window:
