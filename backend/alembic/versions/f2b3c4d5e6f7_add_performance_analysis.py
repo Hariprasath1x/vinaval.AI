@@ -19,7 +19,8 @@ depends_on = None
 def upgrade() -> None:
     # ── Step 1: Add user_id to quiz_sessions ─────────────────────────────────
     with op.batch_alter_table('quiz_sessions', schema=None) as batch_op:
-        batch_op.add_column(sa.Column('user_id', sa.String(), nullable=True))
+        batch_op.add_column(sa.Column('user_id', sa.Integer(), nullable=True))
+        batch_op.create_index(op.f('ix_quiz_sessions_user_id'), ['user_id'], unique=False)
 
     # ── Step 2: Create performance_analyses table ─────────────────────────────
     op.create_table(
@@ -27,7 +28,7 @@ def upgrade() -> None:
         sa.Column('id', sa.Integer(), nullable=False),
         sa.Column('session_id', sa.Integer(), nullable=False),
         sa.Column('space_id', sa.Integer(), nullable=False),
-        sa.Column('user_id', sa.String(), nullable=True),
+        sa.Column('user_id', sa.Integer(), nullable=True),
 
         # Deterministic fields (always present)
         sa.Column('performance_level', sa.String(), nullable=False),   # excellent/good/developing/needs_work
@@ -57,7 +58,6 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(['session_id'], ['quiz_sessions.id'], ondelete='CASCADE'),
         sa.ForeignKeyConstraint(['space_id'], ['learning_spaces.id'], ondelete='CASCADE'),
         sa.PrimaryKeyConstraint('id'),
-        sa.UniqueConstraint('session_id', name='uq_performance_analyses_session_id'),
     )
     op.create_index(op.f('ix_performance_analyses_id'), 'performance_analyses', ['id'], unique=False)
     op.create_index(op.f('ix_performance_analyses_session_id'), 'performance_analyses', ['session_id'], unique=True)
@@ -73,4 +73,5 @@ def downgrade() -> None:
     op.drop_table('performance_analyses')
 
     with op.batch_alter_table('quiz_sessions', schema=None) as batch_op:
+        batch_op.drop_index(op.f('ix_quiz_sessions_user_id'))
         batch_op.drop_column('user_id')
