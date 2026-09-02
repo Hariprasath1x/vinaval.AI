@@ -160,3 +160,15 @@ async def client(db_session: AsyncSession, mock_user) -> AsyncGenerator[AsyncCli
         yield ac
 
     app.dependency_overrides.clear()
+
+
+# ── Mock Embedding Readiness ───────────────────────────────────────────────────
+
+@pytest_asyncio.fixture(autouse=True)
+async def mock_embedding_readiness():
+    """Ensure embedding readiness state is initialized and set for tests, bypassing real background initialization."""
+    from app.core.chroma import init_embedding_readiness_state
+    import app.core.chroma as chroma
+    init_embedding_readiness_state()
+    if chroma._embedding_ready_event:
+        chroma._embedding_ready_event.set()

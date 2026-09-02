@@ -760,6 +760,9 @@ async def stream_chat(
     Stream an AI response token-by-token using Groq's async client.
     """
     from app.rag.retrieval_log import log_retrieval
+    from app.core.chroma import wait_for_embedding_model
+
+    await wait_for_embedding_model()
 
     t_start = time.monotonic()
     
@@ -975,6 +978,9 @@ async def get_chat_response(
     active_doc_filename: Optional[str] = None,
 ) -> str:
     """Non-streaming version — returns full response. Used as fallback or for testing."""
+    from app.core.chroma import wait_for_embedding_model
+    await wait_for_embedding_model()
+
     parts = []
     async for chunk in stream_chat(
         exam, subject, history, user_message, forced_lang,
@@ -1030,6 +1036,9 @@ async def generate_mcqs(
     """
     Generate MCQ questions using Groq, grounded in ChromaDB context.
     """
+    from app.core.chroma import wait_for_embedding_model
+    await wait_for_embedding_model()
+
     search_query = topic if topic else f"{exam} {subject} syllabus overview"
     
     if source_type == "user" and space_id:
@@ -1156,6 +1165,9 @@ async def generate_flashcards(
     lang: str = "en",
 ) -> List[Dict]:
     """Generate flashcard pairs (front/back) using Groq, grounded in ChromaDB context."""
+    from app.core.chroma import wait_for_embedding_model
+    await wait_for_embedding_model()
+
     context_block, _ = _retrieve_syllabus_context(exam, subject, topic, n_results=5)
     if context_block:
         context_block = (
@@ -1331,6 +1343,9 @@ async def generate_mcqs_stream(
     source_type: str = "curriculum",
     space_id: Optional[int] = None,
 ) -> AsyncGenerator[Dict, None]:
+    from app.core.chroma import wait_for_embedding_model
+    await wait_for_embedding_model()
+
     search_query = topic if topic else f"{exam} {subject} syllabus overview"
     
     if source_type == "user" and space_id:

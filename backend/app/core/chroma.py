@@ -57,6 +57,8 @@ CHROMA_PATH = (
 #   • Semantic similarity is cross-lingual: Tamil query ↔ English document works.
 #   • ~120 MB download on first use; cached locally after that.
 _embedding_function: Optional[Any] = None
+_embedding_ready_event: Optional[Any] = None
+_embedding_error: Optional[Exception] = None
 
 def get_embedding_function():
     global _embedding_function
@@ -76,7 +78,39 @@ def get_embedding_function():
             raise
     return _embedding_function
 
+def init_embedding_readiness_state():
+    global _embedding_ready_event
+    import asyncio
+    if _embedding_ready_event is None:
+        _embedding_ready_event = asyncio.Event()
+
+
+async def init_embedding_model_background():
+    global _embedding_error, _embedding_ready_event
+    import asyncio
+    try:
+        await asyncio.to_thread(get_embedding_function)
+    except Exception as e:
+        _embedding_error = e
+    finally:
+        if _embedding_ready_event:
+            _embedding_ready_event.set()
+
+
+async def wait_for_embedding_model():
+    global _embedding_ready_event
+    if _embedding_ready_event is None:
+        raise RuntimeError("Embedding readiness state was not initialized during startup.")
+    
+    if not _embedding_ready_event.is_set():
+        await _embedding_ready_event.wait()
+    
+    if _embedding_error is not None:
+        raise RuntimeError("Embedding model failed to initialize during background warm-up.") from _embedding_error
+
+
 _client: Optional[Any] = None
+
 
 
 # ── Client ─────────────────────────────────────────────────────────────────────

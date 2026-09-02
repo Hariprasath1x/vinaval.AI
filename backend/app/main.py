@@ -151,17 +151,19 @@ async def lifespan(app: FastAPI):
     init_firebase()
 
     import asyncio
-    from app.core.chroma import get_embedding_function
+    from app.core.chroma import init_embedding_model_background, init_embedding_readiness_state
 
-    logger.info("[STARTUP] Pre-loading embedding model...")
-    try:
-        await asyncio.to_thread(get_embedding_function)
-        logger.info("[STARTUP] Embedding model ready")
-    except Exception:
-        logger.exception("[STARTUP] Embedding model pre-load failed")
-        raise
+    logger.info("[STARTUP] Initializing embedding readiness state...")
+    init_embedding_readiness_state()
+
+    logger.info("[STARTUP] Starting background embedding model warm-up task...")
+    warmup_task = asyncio.create_task(init_embedding_model_background())
 
     yield
+    
+    if not warmup_task.done():
+        logger.info("[SHUTDOWN] Cancelling embedding model warm-up task...")
+        warmup_task.cancel()
 
 
 def create_app() -> FastAPI:
