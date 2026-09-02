@@ -149,6 +149,18 @@ async def lifespan(app: FastAPI):
     """Application lifespan: initialise Firebase on startup."""
     logger.info("[STARTUP] Initializing Firebase")
     init_firebase()
+
+    import asyncio
+    from app.core.chroma import get_embedding_function
+
+    logger.info("[STARTUP] Pre-loading embedding model...")
+    try:
+        await asyncio.to_thread(get_embedding_function)
+        logger.info("[STARTUP] Embedding model ready")
+    except Exception:
+        logger.exception("[STARTUP] Embedding model pre-load failed")
+        raise
+
     yield
 
 
