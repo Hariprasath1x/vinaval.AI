@@ -1,0 +1,25 @@
+# Pyrefly configuration for the vinavalAI backend
+# This file tells Pyrefly to use the backend virtualenv for import resolution.
+# Workspace root: /Users/hariprasathc/Projects/vinavalAI
+# Backend source root: backend/  (this file lives here, making it the config root)
+# Virtual environment: backend/venv/
+
+# The Python interpreter to use. Pyrefly queries this interpreter's sys.path
+# to find site-packages (sqlalchemy, fastapi, alembic, pytest, etc.)
+python-interpreter = "venv/bin/python"
+
+# Files Pyrefly should type-check (all Python files under backend/)
+project-includes = ["**/*.py"]
+
+# Exclude the venv from type-checking (packages are referenced, not type-checked)
+# Also exclude __pycache__ and hidden dirs. Pyrefly appends its own defaults too.
+project-excludes = ["venv/**", "**/__pycache__/**", "**/.[!/.]*/**"]
+
+# The search path for local imports.
+# Since this config lives in backend/, "." means backend/ itself.
+# This means "from app.rag.chain import ..." resolves to backend/app/rag/chain.py
+search-path = ["."]
+
+# Use the "basic" preset — reports missing imports and high-confidence errors.
+# Switch to "standard" or "strict" when you want full type checking.
+preset = "basic"

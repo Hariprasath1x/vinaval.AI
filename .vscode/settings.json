@@ -5,5 +5,6 @@
   "python.autoComplete.extraPaths": [
     "${workspaceFolder}/backend"
   ],
-  "python.defaultInterpreterPath": "${workspaceFolder}/backend/venv/bin/python"
+  "python.defaultInterpreterPath": "${workspaceFolder}/backend/venv/bin/python",
+  "python.pyrefly.configPath": "${workspaceFolder}/backend/pyrefly.toml"
 }
