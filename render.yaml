@@ -1,0 +1,27 @@
+services:
+  - type: web
+    name: vinaval-backend
+    env: docker
+    rootDir: backend
+    plan: free
+    disk:
+      name: vinaval-data
+      mountPath: /app/data
+      sizeGB: 1
+    envVars:
+      - key: DATABASE_URL
+        value: sqlite+aiosqlite:////app/data/vinavalai.db
+      - key: CHROMA_PERSIST_DIR
+        value: /app/data/chroma_db
+      - key: APP_ENV
+        value: production
+      - key: FRONTEND_URL
+        sync: false
+      - key: SECRET_KEY
+        generateValue: true
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: FIREBASE_SERVICE_ACCOUNT_PATH
+        value: ./firebase-service-account.json
