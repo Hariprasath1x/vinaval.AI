@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vinaval AI</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,600;1,9..144,500&family=Inter:wght@400;500;600;700&family=Noto+Sans+Tamil:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #fbfaf8;
+    --ink: #1f2937;
+    --muted: #4b5563;
+    --accent: #315f5c;
+    --accent-deep: #264a48;
+    --accent-soft: #dfeae8;
+    --track: #f1f0eb;
+    --border: #e5e7ef;
+    --amber: #e9b872;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    font-family: 'Inter', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    overflow: hidden;
+  }
+
+  .page {
+    height: 100vh;
+    height: 100dvh;
+    display: grid;
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+  }
+
+  /* ---------- LEFT ---------- */
+  .left {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: clamp(20px, 4vh, 40px) clamp(24px, 5vw, 80px);
+    min-height: 0;
+  }
+  .left::before {
+    content: "";
+    position: absolute; inset: 0;
+    background:
+      radial-gradient(600px 400px at 0% 0%, rgba(49,95,92,.08), transparent 70%),
+      radial-gradient(500px 400px at 30% 100%, rgba(233,184,114,.16), transparent 70%);
+    pointer-events: none;
+  }
+  nav { position: relative; display: flex; align-items: center; justify-content: space-between; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 20px; letter-spacing: -.01em; }
+  .brand svg { width: 30px; height: 30px; color: var(--accent); }
+  .nav-link {
+    text-decoration: none; color: var(--accent); font-weight: 600; font-size: 14px;
+    padding: 9px 18px; border: 1px solid var(--border); border-radius: 999px; background: #fff;
+    transition: border-color .15s, background .15s;
+  }
+  .nav-link:hover { border-color: var(--accent); background: var(--accent-soft); }
+
+  .hero { position: relative; }
+  .pill {
+    display: inline-flex; align-items: center; gap: 8px;
+    background: var(--track); color: var(--accent);
+    font-size: 12.5px; font-weight: 600; letter-spacing: .05em;
+    padding: 7px 14px; border-radius: 999px;
+    margin-bottom: clamp(14px, 3vh, 28px);
+  }
+  .pill .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); animation: pulse 2s infinite; }
+  @keyframes pulse { 0%{box-shadow:0 0 0 0 rgba(49,95,92,.5)} 70%{box-shadow:0 0 0 9px rgba(49,95,92,0)} 100%{box-shadow:0 0 0 0 rgba(49,95,92,0)} }
+
+  h1 {
+    font-family: 'Fraunces', Georgia, serif;
+    font-weight: 600;
+    font-size: clamp(44px, min(7.2vw, 12vh), 108px);
+    line-height: .98;
+    letter-spacing: -.03em;
+    margin-bottom: clamp(14px, 3vh, 28px);
+  }
+  h1 em {
+    font-style: italic; font-weight: 500; color: var(--accent);
+    position: relative; white-space: nowrap;
+  }
+  h1 em::after {
+    content: ""; position: absolute; left: 0; right: 0; bottom: .02em; height: .14em;
+    background: var(--amber); opacity: .55; border-radius: 4px; z-index: -1;
+    transform-origin: left; animation: draw 1s .6s both cubic-bezier(.2,.8,.2,1);
+  }
+  @keyframes draw { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+
+  .sub { font-size: clamp(15px, 2.1vh, 19px); line-height: 1.6; color: var(--muted); max-width: 520px; margin-bottom: clamp(18px, 4vh, 36px); }
+  .cta { display: flex; flex-wrap: wrap; gap: 12px; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 10px; text-decoration: none;
+    font-size: 16px; font-weight: 500; padding: 16px 28px; border-radius: 12px;
+    transition: transform .15s, background .15s, border-color .15s;
+  }
+  .btn-primary { background: var(--accent); color: #fff; box-shadow: 0 10px 24px rgba(49,95,92,.28); }
+  .btn-primary:hover { background: var(--accent-deep); transform: translateY(-2px); }
+  .btn-primary svg { width: 18px; height: 18px; transition: transform .15s; }
+  .btn-primary:hover svg { transform: translateX(4px); }
+  .btn-ghost { background: #fff; color: var(--ink); border: 1px solid var(--border); }
+  .btn-ghost:hover { border-color: var(--accent); }
+
+  .stats { position: relative; display: flex; gap: clamp(20px, 4vw, 48px); flex-wrap: wrap; }
+  .stat b { display: block; font-family: 'Fraunces', serif; font-size: clamp(22px, 3.6vh, 32px); font-weight: 600; color: var(--accent); }
+  .stat span { font-size: 13px; color: var(--muted); }
+
+  /* ---------- RIGHT ---------- */
+  .right { padding: clamp(12px, 2vh, 20px); padding-left: 0; min-height: 0; }
+  .panel {
+    position: relative; height: 100%;
+    background: linear-gradient(155deg, #3a706c 0%, var(--accent) 45%, var(--accent-deep) 100%);
+    border-radius: 32px; overflow: hidden;
+    display: grid; place-items: center;
+  }
+  .grid-dots {
+    position: absolute; inset: 0;
+    background-image: radial-gradient(rgba(255,255,255,.14) 1.2px, transparent 1.2px);
+    background-size: 26px 26px;
+    mask-image: radial-gradient(circle at 50% 50%, #000 30%, transparent 85%);
+    -webkit-mask-image: radial-gradient(circle at 50% 50%, #000 30%, transparent 85%);
+  }
+  .big-book {
+    position: absolute; width: 90%; max-width: 640px; color: #fff; opacity: .07;
+    right: -12%; bottom: -10%; transform: rotate(-12deg);
+  }
+  .orb { position: absolute; border-radius: 50%; filter: blur(2px); }
+  .orb.a { width: 220px; height: 220px; right: -60px; top: -60px; background: radial-gradient(circle, rgba(233,184,114,.55), transparent 70%); }
+  .orb.b { width: 300px; height: 300px; left: -100px; bottom: -80px; background: radial-gradient(circle, rgba(255,255,255,.18), transparent 70%); }
+
+  .chat {
+    position: relative; z-index: 2;
+    width: min(440px, 80%);
+    background: #fff; border-radius: 22px; padding: 18px;
+    box-shadow: 0 30px 60px rgba(0,0,0,.28);
+    animation: float 7s ease-in-out infinite;
+  }
+  @keyframes float { 0%,100%{ transform: translateY(0) } 50%{ transform: translateY(-10px) } }
+  .chat-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+  .chat-title { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 14px; }
+  .chat-title i { width: 8px; height: 8px; border-radius: 50%; background: #3fa27a; }
+  .toggle { display: inline-flex; background: var(--track); border-radius: 999px; padding: 3px; }
+  .toggle button {
+    border: 0; background: transparent; font-family: inherit; font-size: 12px; font-weight: 600;
+    color: var(--muted); padding: 6px 12px; border-radius: 999px; cursor: pointer; transition: all .2s;
+  }
+  .toggle button.on { background: #fff; color: var(--accent); box-shadow: 0 1px 4px rgba(0,0,0,.12); }
+  .msg { font-size: 14px; line-height: 1.55; border-radius: 14px; padding: 11px 14px; margin-bottom: 10px; transition: opacity .25s; }
+  .msg.user { background: var(--accent); color: #fff; margin-left: 48px; border-bottom-right-radius: 4px; }
+  .msg.ai { background: var(--track); color: var(--ink); margin-right: 24px; border-bottom-left-radius: 4px; min-height: 92px; }
+  .ta { font-family: 'Noto Sans Tamil', 'Inter', sans-serif; }
+  .src {
+    display: inline-flex; align-items: center; gap: 6px; margin-top: 10px;
+    font-size: 11.5px; font-weight: 600; color: var(--accent);
+    background: var(--accent-soft); padding: 4px 10px; border-radius: 999px;
+  }
+  .src svg { width: 12px; height: 12px; }
+  .caret { display: inline-block; width: 2px; height: 1em; background: var(--accent); vertical-align: -2px; margin-left: 1px; animation: blink 1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .fade { opacity: 0; }
+
+  .float-card {
+    position: absolute; z-index: 3; background: #fff; border-radius: 16px;
+    padding: 12px 16px; box-shadow: 0 18px 40px rgba(0,0,0,.22);
+    display: flex; align-items: center; gap: 12px; font-size: 13px;
+  }
+  .float-card b { display: block; font-size: 14px; }
+  .float-card span { color: var(--muted); font-size: 12px; }
+  .fc1 { top: 9%; right: 7%; animation: float 6s -2s ease-in-out infinite; }
+  .fc2 { bottom: 10%; left: 6%; animation: float 8s -4s ease-in-out infinite; }
+  .fc3 { bottom: 17%; right: 6%; animation: float 7s -1s ease-in-out infinite; background: var(--amber); }
+  .fc3 b, .fc3 span { color: #3b2a10; }
+  .ring { width: 46px; height: 46px; }
+  .ring circle { fill: none; stroke-width: 6; }
+  .ring .bg { stroke: var(--track); }
+  .ring .fg { stroke: var(--accent); stroke-linecap: round; stroke-dasharray: 126; stroke-dashoffset: 126; transform: rotate(-90deg); transform-origin: 50% 50%; animation: fill 1.6s .5s forwards ease-out; }
+  @keyframes fill { to { stroke-dashoffset: 28; } }
+  .ico { width: 38px; height: 38px; border-radius: 11px; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent); }
+  .ico svg { width: 20px; height: 20px; }
+
+  /* entrance */
+  .hero > *, nav, .stats { animation: rise .8s both cubic-bezier(.2,.8,.2,1); }
+  .hero > *:nth-child(2) { animation-delay: .08s; }
+  .hero > *:nth-child(3) { animation-delay: .16s; }
+  .hero > *:nth-child(4) { animation-delay: .24s; }
+  .stats { animation-delay: .35s; }
+  @keyframes rise { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: none; } }
+
+  /* ---------- SMALL SCREENS ---------- */
+  @media (max-width: 900px) {
+    body { overflow-y: auto; }
+    .page { height: auto; min-height: 100dvh; grid-template-columns: 1fr; }
+    .left { gap: 28px; padding-top: 24px; padding-bottom: 28px; }
+    .right { padding: 0 12px 12px; }
+    .panel { min-height: 560px; }
+    .chat { width: min(420px, 88%); }
+    .fc1 { top: 4%; right: 4%; }
+    .fc2 { bottom: 4%; left: 4%; }
+    .fc3 { display: none; }
+  }
+  @media (max-height: 640px) and (min-width: 901px) {
+    .stats { display: none; }
+    .fc3 { display: none; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; } .ring .fg { stroke-dashoffset: 28; } }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <section class="left">
+    <nav>
+      <div class="brand">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+        Vinaval AI
+      </div>
+      <a class="nav-link" href="/login">Log in</a>
+    </nav>
+
+    <div class="hero">
+      <div class="pill"><span class="dot"></span> NEET &middot; TNPSC &middot; English + தமிழ்</div>
+      <h1>Ask. Learn.<br><em>Crack it.</em></h1>
+      <p class="sub">Your AI learning arena for competitive exams. Get answers grounded in your study material, practise on demand, and learn in the language you think in.</p>
+      <div class="cta">
+        <a class="btn btn-primary" href="/login">Get Started
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+        </a>
+        <a class="btn btn-ghost" href="/login?tab=login">I have an account</a>
+      </div>
+    </div>
+
+    <div class="stats">
+      <div class="stat"><b>2</b><span>Languages</span></div>
+      <div class="stat"><b>NEET + TNPSC</b><span>Exam tracks</span></div>
+      <div class="stat"><b>Cited</b><span>Source-backed answers</span></div>
+    </div>
+  </section>
+
+  <section class="right">
+    <div class="panel">
+      <div class="grid-dots"></div>
+      <div class="orb a"></div><div class="orb b"></div>
+      <svg class="big-book" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+
+      <div class="float-card fc1">
+        <svg class="ring" viewBox="0 0 48 48"><circle class="bg" cx="24" cy="24" r="20"/><circle class="fg" cx="24" cy="24" r="20"/></svg>
+        <div><b>Biology</b><span>78% mastered</span></div>
+      </div>
+
+      <div class="chat">
+        <div class="chat-head">
+          <div class="chat-title"><i></i> Vinaval Tutor</div>
+          <div class="toggle" id="toggle">
+            <button class="on" data-lang="en">EN</button>
+            <button data-lang="ta">தமிழ்</button>
+          </div>
+        </div>
+        <div class="msg user" id="q">What is photosynthesis?</div>
+        <div class="msg ai" id="a"><span id="atext"></span><span class="caret"></span>
+          <div><span class="src">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+            Biology &middot; Photosynthesis in Higher Plants
+          </span></div>
+        </div>
+      </div>
+
+      <div class="float-card fc2">
+        <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></div>
+        <div><b>Mock test ready</b><span>TNPSC Group 4 &middot; 50 Qs</span></div>
+      </div>
+
+      <div class="float-card fc3">
+        <div><b>12-day streak</b><span>Keep it going</span></div>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<script>
+  const copy = {
+    en: {
+      q: "What is photosynthesis?",
+      a: "Photosynthesis is the process by which green plants convert light energy into chemical energy, making glucose from carbon dioxide and water in the chloroplasts.",
+      cls: ""
+    },
+    ta: {
+      q: "ஒளிச்சேர்க்கை என்றால் என்ன?",
+      a: "ஒளிச்சேர்க்கை என்பது பச்சைத் தாவரங்கள் ஒளி ஆற்றலை வேதி ஆற்றலாக மாற்றும் செயல்முறை. பசுங்கணிகத்தில் கார்பன் டை ஆக்சைடும் நீரும் சேர்ந்து குளுக்கோஸ் உருவாகிறது.",
+      cls: "ta"
+    }
+  };
+  const q = document.getElementById('q'), a = document.getElementById('a'), at = document.getElementById('atext');
+  const btns = document.querySelectorAll('#toggle button');
+  let timer, auto, current = 'en';
+
+  function type(text) {
+    clearInterval(timer);
+    at.textContent = '';
+    let i = 0;
+    timer = setInterval(() => {
+      at.textContent = text.slice(0, ++i);
+      if (i >= text.length) clearInterval(timer);
+    }, 22);
+  }
+  function setLang(l) {
+    current = l;
+    btns.forEach(b => b.classList.toggle('on', b.dataset.lang === l));
+    q.classList.add('fade'); a.classList.add('fade');
+    setTimeout(() => {
+      q.textContent = copy[l].q;
+      q.classList.toggle('ta', l === 'ta');
+      a.classList.toggle('ta', l === 'ta');
+      q.classList.remove('fade'); a.classList.remove('fade');
+      type(copy[l].a);
+    }, 250);
+  }
+  btns.forEach(b => b.addEventListener('click', () => {
+    clearInterval(auto);
+    if (b.dataset.lang !== current) setLang(b.dataset.lang);
+  }));
+  type(copy.en.a);
+  auto = setInterval(() => setLang(current === 'en' ? 'ta' : 'en'), 9000);
+</script>
+</body>
+</html>

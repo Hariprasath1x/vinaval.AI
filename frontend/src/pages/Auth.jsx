@@ -1,17 +1,43 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useNavigate, useLocation, useSearchParams, Link, Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { BookOpen } from 'lucide-react';
-import './Auth.css'; // Add local CSS if necessary, or just use inline/global
+import { BookOpen, ArrowLeft } from 'lucide-react';
+import './Auth.css';
 
 export default function Auth() {
-  const { login, signup } = useAuth();
-  const [isLogin, setIsLogin] = useState(true);
-  
+  const { user, login, signup } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  const queryTab = searchParams.get('tab');
+  const isSignupInit = location.pathname === '/signup' || queryTab === 'signup';
+  const [isLogin, setIsLogin] = useState(!isSignupInit);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  // Sync tab state if URL changes
+  useEffect(() => {
+    if (location.pathname === '/signup' || searchParams.get('tab') === 'signup') {
+      setIsLogin(false);
+    } else if (location.pathname === '/login' || searchParams.get('tab') === 'login') {
+      setIsLogin(true);
+    }
+  }, [location.pathname, searchParams]);
+
+  // If user is already logged in, redirect straight to dashboard
+  if (user) {
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  const handleTabChange = (loginMode) => {
+    setIsLogin(loginMode);
+    setError('');
+    setSearchParams({ tab: loginMode ? 'login' : 'signup' });
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -24,6 +50,7 @@ export default function Auth() {
       } else {
         await signup(name, email, password);
       }
+      navigate('/dashboard');
     } catch (err) {
       setError(err.message);
     } finally {
@@ -45,21 +72,25 @@ export default function Auth() {
     <div className="auth-container animate-fade-in">
       <div className="auth-card">
         <div className="auth-header">
-          <BookOpen className="brand-icon" size={40} />
-          <h1>Vinaval AI</h1>
+          <Link to="/" className="auth-brand-link" title="Back to Welcome Page">
+            <BookOpen className="brand-icon" size={40} />
+            <h1>Vinaval AI</h1>
+          </Link>
           <p>AI-Powered Learning Arena for Aspirants</p>
         </div>
 
         <div className="auth-tabs">
           <button 
+            type="button"
             className={`tab-btn ${isLogin ? 'active' : ''}`}
-            onClick={() => setIsLogin(true)}
+            onClick={() => handleTabChange(true)}
           >
             Log In
           </button>
           <button 
+            type="button"
             className={`tab-btn ${!isLogin ? 'active' : ''}`}
-            onClick={() => setIsLogin(false)}
+            onClick={() => handleTabChange(false)}
           >
             Sign Up
           </button>
@@ -121,6 +152,13 @@ export default function Auth() {
             {loading ? 'Processing...' : (isLogin ? 'Log In' : 'Sign Up')}
           </button>
         </form>
+
+        <div className="auth-footer-nav">
+          <Link to="/" className="back-home-link">
+            <ArrowLeft size={16} />
+            <span>Back to Home</span>
+          </Link>
+        </div>
       </div>
     </div>
   );

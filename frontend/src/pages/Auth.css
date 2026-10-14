@@ -163,3 +163,37 @@
   border-radius: var(--radius-md);
   text-align: center;
 }
+
+.auth-brand-link {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  text-decoration: none;
+  color: inherit;
+  transition: opacity var(--transition-fast);
+}
+
+.auth-brand-link:hover {
+  opacity: 0.85;
+}
+
+.auth-footer-nav {
+  margin-top: 1.5rem;
+  text-align: center;
+}
+
+.back-home-link {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: color var(--transition-fast), transform var(--transition-fast);
+}
+
+.back-home-link:hover {
+  color: var(--academic-green);
+  transform: translateX(-2px);
+}
+

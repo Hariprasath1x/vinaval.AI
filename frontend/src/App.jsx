@@ -1,6 +1,7 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import Welcome from './pages/Welcome';
 import Auth from './pages/Auth';
 import Dashboard from './pages/Dashboard';
 import SelectExam from './pages/SelectExam';
@@ -11,7 +12,7 @@ import MockTests from './pages/MockTests';
 const ProtectedRoute = ({ children }) => {
   const { user } = useAuth();
   if (!user) {
-    return <Navigate to="/" replace />;
+    return <Navigate to="/login" replace />;
   }
   return children;
 };
@@ -23,6 +24,18 @@ function AppRoutes() {
     <Routes>
       <Route 
         path="/" 
+        element={user ? <Navigate to="/dashboard" replace /> : <Welcome />} 
+      />
+      <Route 
+        path="/welcome" 
+        element={<Welcome />} 
+      />
+      <Route 
+        path="/login" 
+        element={user ? <Navigate to="/dashboard" replace /> : <Auth />} 
+      />
+      <Route 
+        path="/signup" 
         element={user ? <Navigate to="/dashboard" replace /> : <Auth />} 
       />
       <Route 
