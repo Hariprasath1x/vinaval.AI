@@ -90,32 +90,34 @@ async def _llm_complete(
             return ""
         except Exception as e:
             logger.error(f"[LLM] Gemini completion failed: {e}. Falling back to Groq.")
-            if settings.GROQ_API_KEY:
-                try:
-                    from groq import AsyncGroq
-                    client = AsyncGroq(api_key=settings.GROQ_API_KEY)
-                    messages = []
-                    if system_instruction:
-                        messages.append({"role": "system", "content": system_instruction})
-                    messages.append({"role": "user", "content": prompt})
-                    chat_completion = await client.chat.completions.create(
-                        messages=messages,
-                        model=settings.GROQ_MODEL,
-                        temperature=temperature,
-                        max_tokens=max_tokens,
-                    )
-                    text = chat_completion.choices[0].message.content
-                    if text:
-                        logger.info("[LLM] Groq completion succeeded")
-                        return text
-                    return ""
-                except Exception as groq_e:
-                    logger.error(f"[LLM] Groq fallback failed: {groq_e}")
-                    raise ValueError("LLM completion failed for both Gemini and Groq")
-            else:
-                raise ValueError(f"LLM completion failed: {e}")
-    else:
-        raise ValueError("No GEMINI_API_KEY configured on the server.")
+            if not settings.GROQ_API_KEY:
+                raise ValueError(f"LLM completion failed for Gemini and no GROQ_API_KEY configured: {e}")
+
+    # Fallback to Groq if Gemini is not configured or failed
+    if settings.GROQ_API_KEY:
+        try:
+            from groq import AsyncGroq
+            client = AsyncGroq(api_key=settings.GROQ_API_KEY)
+            messages = []
+            if system_instruction:
+                messages.append({"role": "system", "content": system_instruction})
+            messages.append({"role": "user", "content": prompt})
+            chat_completion = await client.chat.completions.create(
+                messages=messages,
+                model=settings.GROQ_MODEL,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
+            text = chat_completion.choices[0].message.content
+            if text:
+                logger.info("[LLM] Groq completion succeeded")
+                return text
+            return ""
+        except Exception as groq_e:
+            logger.error(f"[LLM] Groq fallback failed: {groq_e}")
+            raise ValueError(f"LLM completion failed for both Gemini and Groq: {groq_e}")
+
+    raise ValueError("No LLM API keys (GEMINI_API_KEY or GROQ_API_KEY) configured on the server.")
 
 
 async def _llm_complete_stream(
@@ -148,32 +150,34 @@ async def _llm_complete_stream(
             return
         except Exception as e:
             logger.error(f"[LLM] Gemini stream failed: {e}. Falling back to Groq.")
-            if settings.GROQ_API_KEY:
-                try:
-                    from groq import AsyncGroq
-                    client = AsyncGroq(api_key=settings.GROQ_API_KEY)
-                    messages = []
-                    if system_instruction:
-                        messages.append({"role": "system", "content": system_instruction})
-                    messages.append({"role": "user", "content": prompt})
-                    stream = await client.chat.completions.create(
-                        messages=messages,
-                        model=settings.GROQ_MODEL,
-                        temperature=temperature,
-                        max_tokens=max_tokens,
-                        stream=True,
-                    )
-                    async for chunk in stream:
-                        if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
-                            yield chunk.choices[0].delta.content
-                    return
-                except Exception as groq_e:
-                    logger.error(f"[LLM] Groq fallback stream failed: {groq_e}")
-                    raise ValueError("LLM stream failed for both Gemini and Groq")
-            else:
-                raise ValueError(f"LLM stream failed: {e}")
-    else:
-        raise ValueError("No GEMINI_API_KEY configured on the server.")
+            if not settings.GROQ_API_KEY:
+                raise ValueError(f"LLM stream failed for Gemini and no GROQ_API_KEY configured: {e}")
+
+    # Fallback to Groq if Gemini is not configured or failed
+    if settings.GROQ_API_KEY:
+        try:
+            from groq import AsyncGroq
+            client = AsyncGroq(api_key=settings.GROQ_API_KEY)
+            messages = []
+            if system_instruction:
+                messages.append({"role": "system", "content": system_instruction})
+            messages.append({"role": "user", "content": prompt})
+            stream = await client.chat.completions.create(
+                messages=messages,
+                model=settings.GROQ_MODEL,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                stream=True,
+            )
+            async for chunk in stream:
+                if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
+                    yield chunk.choices[0].delta.content
+            return
+        except Exception as groq_e:
+            logger.error(f"[LLM] Groq fallback stream failed: {groq_e}")
+            raise ValueError(f"LLM stream failed for both Gemini and Groq: {groq_e}")
+
+    raise ValueError("No LLM API keys (GEMINI_API_KEY or GROQ_API_KEY) configured on the server.")
 
 class RAGSystemError(Exception):
     """Raised when ChromaDB or vector store fails."""
@@ -922,49 +926,48 @@ async def stream_chat(
 
         except Exception as e:
             logger.exception(f"[LLM] Gemini API failed exception_type={type(e).__name__}. Falling back to Groq.")
-            if settings.GROQ_API_KEY:
-                try:
-                    from groq import AsyncGroq
-                    client = AsyncGroq(api_key=settings.GROQ_API_KEY)
-                    messages = []
-                    if system_prompt:
-                        messages.append({"role": "system", "content": system_prompt})
-                    
-                    for msg in recent_history:
-                        role = "assistant" if msg["role"] == "assistant" else "user"
-                        messages.append({"role": role, "content": msg["content"]})
-                    messages.append({"role": "user", "content": user_message})
 
-                    logger.info(f"[LLM] provider=groq model={settings.GROQ_MODEL}")
-                    llm_start = time.perf_counter()
-                    
-                    stream = await client.chat.completions.create(
-                        messages=messages,
-                        model=settings.GROQ_MODEL,
-                        temperature=0.7,
-                        max_tokens=max_tokens,
-                        stream=True,
-                    )
-                    
-                    first_chunk = True
-                    async for chunk in stream:
-                        if first_chunk:
-                            first_elapsed = (time.perf_counter() - llm_start) * 1000
-                            logger.info(f"[LLM] First response chunk received (Groq) elapsed_ms={first_elapsed:.2f}")
-                            first_chunk = False
-                        if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
-                            yield chunk.choices[0].delta.content
+    # Fallback to Groq if Gemini is not configured or failed
+    if settings.GROQ_API_KEY:
+        try:
+            from groq import AsyncGroq
+            client = AsyncGroq(api_key=settings.GROQ_API_KEY)
+            messages = []
+            if system_prompt:
+                messages.append({"role": "system", "content": system_prompt})
 
-                    llm_elapsed = (time.perf_counter() - llm_start) * 1000
-                    logger.info(f"[LLM] LLM stream completed (Groq) elapsed_ms={llm_elapsed:.2f}")
-                    return
-                except Exception as groq_e:
-                    logger.exception(f"[LLM] Groq API fallback failed exception_type={type(groq_e).__name__}")
-                    yield "Error: An unexpected error occurred while communicating with the LLMs."
-            else:
-                yield "Error: An unexpected error occurred while communicating with the LLM."
+            for msg in recent_history:
+                role = "assistant" if msg["role"] == "assistant" else "user"
+                messages.append({"role": role, "content": msg["content"]})
+            messages.append({"role": "user", "content": user_message})
+
+            logger.info(f"[LLM] provider=groq model={settings.GROQ_MODEL}")
+            llm_start = time.perf_counter()
+
+            stream = await client.chat.completions.create(
+                messages=messages,
+                model=settings.GROQ_MODEL,
+                temperature=0.7,
+                max_tokens=max_tokens,
+                stream=True,
+            )
+            first_chunk = True
+            async for chunk in stream:
+                if first_chunk:
+                    first_elapsed = (time.perf_counter() - llm_start) * 1000
+                    logger.info(f"[LLM] First response chunk received (Groq) elapsed_ms={first_elapsed:.2f}")
+                    first_chunk = False
+                if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
+                    yield chunk.choices[0].delta.content
+
+            llm_elapsed = (time.perf_counter() - llm_start) * 1000
+            logger.info(f"[LLM] LLM stream completed (Groq) elapsed_ms={llm_elapsed:.2f}")
+            return
+        except Exception as groq_e:
+            logger.exception(f"[LLM] Groq API fallback failed exception_type={type(groq_e).__name__}")
+            yield "Error: An unexpected error occurred while communicating with the LLMs."
     else:
-        logger.error("[LLM] No GEMINI_API_KEY configured.")
+        logger.error("[LLM] No GEMINI_API_KEY or GROQ_API_KEY configured.")
         yield "Error: No API key configured on the server."
 
 

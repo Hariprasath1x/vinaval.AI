@@ -27,7 +27,7 @@ class Settings(BaseSettings):
 
     # Gemini
     GEMINI_API_KEY: Optional[str] = None
-    GEMINI_MODEL: str = "gemini-3.6-flash"
+    GEMINI_MODEL: str = "gemini-1.5-flash"
 
     # Groq Fallback
     GROQ_API_KEY: Optional[str] = None

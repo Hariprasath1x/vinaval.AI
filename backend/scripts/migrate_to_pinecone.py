@@ -123,9 +123,9 @@ def run_migration(dry_run: bool):
             for i, vid in enumerate(ids):
                 total_vectors += 1
 
-                meta = metadatas[i] if metadatas and i < len(metadatas) else None
-                doc = documents[i] if documents and i < len(documents) else None
-                emb = embeddings[i] if embeddings and i < len(embeddings) else None
+                meta = metadatas[i] if metadatas is not None and i < len(metadatas) else None
+                doc = documents[i] if documents is not None and i < len(documents) else None
+                emb = embeddings[i] if embeddings is not None and i < len(embeddings) else None
 
                 # Validation checks
                 skip_reason = None
@@ -152,7 +152,7 @@ def run_migration(dry_run: bool):
 
                     pinecone_batch.append({
                         "id": vid,
-                        "values": emb,
+                        "values": emb.tolist() if hasattr(emb, "tolist") else list(emb),
                         "metadata": meta_payload
                     })
 

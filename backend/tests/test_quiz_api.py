@@ -84,17 +84,50 @@ def _make_groq_response(content: str):
     return response
 
 
+class _MockGeminiResponse:
+    """Mock Gemini response supporting both .text attribute and async iteration for streaming."""
+    def __init__(self, content: str):
+        self.text = content
+        self._chunks = [MagicMock(text=content)]
+
+    def __aiter__(self):
+        self._iter = iter(self._chunks)
+        return self
+
+    async def __anext__(self):
+        try:
+            return next(self._iter)
+        except StopIteration:
+            raise StopAsyncIteration
+
+
 def _make_gemini_model_mock(content: str) -> MagicMock:
     """Returns a mock genai module where GenerativeModel.generate_content_async returns content."""
     mock_genai = MagicMock()
     mock_model = MagicMock()
-    mock_response = MagicMock()
-    mock_response.text = content
+    mock_response = _MockGeminiResponse(content)
     mock_model.generate_content_async = AsyncMock(return_value=mock_response)
     mock_genai.GenerativeModel.return_value = mock_model
     mock_genai.types = MagicMock()
     mock_genai.types.GenerationConfig = MagicMock(return_value={})
     return mock_genai
+
+
+def _parse_sse_events(text: str) -> list[dict]:
+    """Parse Server-Sent Events (SSE) formatted text into a list of dicts."""
+    events = []
+    current_event = "message"
+    for line in text.strip().split("\n"):
+        line = line.strip()
+        if not line:
+            continue
+        if line.startswith("event:"):
+            current_event = line.split(":", 1)[1].strip()
+        elif line.startswith("data:"):
+            data_str = line.split(":", 1)[1].strip()
+            data = json.loads(data_str) if data_str else {}
+            events.append({"event": current_event, "data": data})
+    return events
 
 
 def _patch_space_service(mock_space):
@@ -111,7 +144,7 @@ class TestGenerateQuestions:
     async def test_generate_practice_questions_success(
         self, client: AsyncClient, mock_space
     ):
-        """POST /quiz/generate with a topic returns a list of saved questions."""
+        """POST /quiz/generate with a topic streams SSE events with saved questions."""
         mock_genai = _make_gemini_model_mock(SAMPLE_QUESTIONS_JSON)
 
         with (
@@ -124,14 +157,22 @@ class TestGenerateQuestions:
                 json={"topic": "Newton's Laws", "count": 2, "lang": "en"},
             )
 
-        assert response.status_code == 201
-        data = response.json()
-        assert isinstance(data, dict)
-        assert "questions" in data
-        questions = data["questions"]
-        assert len(questions) == 2
-        assert questions[0]["topic"] == "Newton's Laws"
-        assert questions[0]["correct_option"] == "a"
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("text/event-stream")
+        events = _parse_sse_events(response.text)
+
+        session_events = [e for e in events if e["event"] == "session"]
+        assert len(session_events) == 1
+        assert "session_id" in session_events[0]["data"]
+
+        question_events = [e for e in events if e["event"] == "question"]
+        assert len(question_events) == 2
+        assert question_events[0]["data"]["topic"] == "Newton's Laws"
+        assert "question" in question_events[0]["data"]
+        assert "option_a" in question_events[0]["data"]
+
+        complete_events = [e for e in events if e["event"] == "complete"]
+        assert len(complete_events) == 1
 
     async def test_generate_mock_exam_success(
         self, client: AsyncClient, mock_space
@@ -149,20 +190,20 @@ class TestGenerateQuestions:
                 json={"topic": None, "count": 2, "lang": "en"},
             )
 
-        assert response.status_code == 201
-        data = response.json()
-        assert isinstance(data, dict)
-        assert "questions" in data
-        questions = data["questions"]
-        assert len(questions) == 2
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("text/event-stream")
+        events = _parse_sse_events(response.text)
+
+        question_events = [e for e in events if e["event"] == "question"]
+        assert len(question_events) == 2
         # Mock exam questions should have different topics
-        topics = {q["topic"] for q in questions}
+        topics = {q["data"]["topic"] for q in question_events}
         assert len(topics) == 2, "Mock exam should span multiple topics"
 
     async def test_generate_questions_invalid_json_from_llm(
         self, client: AsyncClient, mock_space
     ):
-        """If the LLM returns invalid JSON, the endpoint should return 502."""
+        """If the LLM returns invalid JSON, the SSE stream should emit an error event."""
         mock_genai = _make_gemini_model_mock("This is not valid JSON at all!")
 
         with (
@@ -175,9 +216,14 @@ class TestGenerateQuestions:
                 json={"topic": "Gravity", "count": 5, "lang": "en"},
             )
 
-        assert response.status_code == 502
-        detail = response.json()["detail"].lower()
-        # When LLM returns unparseable text, generate_mcqs returns [] → QuizService raises 502
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("text/event-stream")
+        events = _parse_sse_events(response.text)
+
+        error_events = [e for e in events if e["event"] == "error"]
+        assert len(error_events) >= 1
+        detail = error_events[0]["data"].get("error", "").lower()
+        # When LLM returns unparseable text, 0 questions are produced -> error event emitted
         assert "failed" in detail or "no valid" in detail or "invalid" in detail
 
     async def test_generate_questions_clamps_count(
@@ -197,8 +243,15 @@ class TestGenerateQuestions:
                 json={"topic": "Optics", "count": 99, "lang": "en"},
             )
 
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("text/event-stream")
+        events = _parse_sse_events(response.text)
+
+        session_events = [e for e in events if e["event"] == "session"]
+        assert len(session_events) == 1
         # The LLM only returns 2 questions in our mock so 2 will be saved
-        assert response.status_code == 201
+        question_events = [e for e in events if e["event"] == "question"]
+        assert len(question_events) == 2
 
 
 # ── Tests: submit answer ───────────────────────────────────────────────────────

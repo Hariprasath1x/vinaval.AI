@@ -1,4 +1,5 @@
 const BASE_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000/api/v1";
+const BACKEND_ROOT_URL = BASE_URL.replace(/\/api\/v1\/?$/, "");
 
 const getHeaders = (isJson = true) => {
   const headers = {};
@@ -24,6 +25,45 @@ const processQueue = (error, token = null) => {
     }
   });
   failedQueue = [];
+};
+
+const refreshAuthToken = async () => {
+  if (isRefreshing) {
+    return new Promise(function(resolve, reject) {
+      failedQueue.push({ resolve, reject });
+    });
+  }
+
+  isRefreshing = true;
+
+  try {
+    const refreshResponse = await fetch(`${BASE_URL}/auth/refresh`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refresh_token: localStorage.getItem("refresh_token") })
+    });
+
+    if (!refreshResponse.ok) {
+      throw new Error("Refresh token expired or invalid");
+    }
+
+    const data = await refreshResponse.json();
+    localStorage.setItem("token", data.access_token);
+    if (data.refresh_token) {
+      localStorage.setItem("refresh_token", data.refresh_token);
+    }
+
+    processQueue(null, data.access_token);
+    return data.access_token;
+  } catch (err) {
+    processQueue(err, null);
+    localStorage.removeItem("token");
+    localStorage.removeItem("refresh_token");
+    window.location.reload();
+    throw err;
+  } finally {
+    isRefreshing = false;
+  }
 };
 
 const handleResponse = async (response) => {
@@ -52,48 +92,12 @@ const fetchWithRetry = async (url, options) => {
   let response = await fetch(url, options);
   
   if (response.status === 401 && localStorage.getItem("refresh_token")) {
-    if (isRefreshing) {
-      return new Promise(function(resolve, reject) {
-        failedQueue.push({ resolve, reject });
-      }).then(token => {
-        options.headers["Authorization"] = 'Bearer ' + token;
-        return fetch(url, options);
-      }).catch(err => {
-        return Promise.reject(err);
-      });
-    }
-
-    isRefreshing = true;
-
     try {
-      const refreshResponse = await fetch(`${BASE_URL}/auth/refresh`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ refresh_token: localStorage.getItem("refresh_token") })
-      });
-      
-      if (!refreshResponse.ok) {
-        throw new Error("Refresh token expired or invalid");
-      }
-      
-      const data = await refreshResponse.json();
-      localStorage.setItem("token", data.access_token);
-      if (data.refresh_token) {
-        localStorage.setItem("refresh_token", data.refresh_token);
-      }
-      
-      processQueue(null, data.access_token);
-      options.headers["Authorization"] = 'Bearer ' + data.access_token;
+      const token = await refreshAuthToken();
+      options.headers["Authorization"] = 'Bearer ' + token;
       response = await fetch(url, options);
     } catch (err) {
-      processQueue(err, null);
-      localStorage.removeItem("token");
-      localStorage.removeItem("refresh_token");
-      // Could dispatch a logout event here, but reloading handles it
-      window.location.reload();
-      throw err;
-    } finally {
-      isRefreshing = false;
+      return Promise.reject(err);
     }
   }
 
@@ -102,7 +106,7 @@ const fetchWithRetry = async (url, options) => {
 
 export const api = {
   get: async (endpoint, params = {}) => {
-    const fullUrl = `${BASE_URL}${endpoint}`;
+    const fullUrl = endpoint === '/health' ? `${BACKEND_ROOT_URL}/health` : `${BASE_URL}${endpoint}`;
     const baseOrigin = typeof window !== 'undefined' && window.location ? window.location.origin : 'http://localhost';
     const url = (fullUrl.startsWith('http://') || fullUrl.startsWith('https://'))
       ? new URL(fullUrl)
@@ -158,7 +162,9 @@ export const api = {
     if (response.status === 401 && localStorage.getItem("refresh_token")) {
       try {
         await api.get('/health');
+        const token = await refreshAuthToken();
         options.headers = getHeaders();
+        options.headers["Authorization"] = `Bearer ${token}`;
         response = await fetch(`${BASE_URL}${endpoint}`, options);
       } catch (e) {
         console.warn("Stream refresh token failed", e);
@@ -225,12 +231,13 @@ export const api = {
     
     let response = await fetch(`${BASE_URL}${endpoint}`, options);
     
-    // Check for 401 - if so, try a normal fetchWithRetry to refresh token, then retry stream
+    // Check for 401 - if so, verify root /health, refresh token, then retry stream
     if (response.status === 401 && localStorage.getItem("refresh_token")) {
-      // Trigger a dummy fetchWithRetry to handle the refresh queue
       try {
-        await api.get('/health'); // This will trigger the refresh token flow in fetchWithRetry
-        options.headers = getHeaders(); // update headers
+        await api.get('/health');
+        const token = await refreshAuthToken();
+        options.headers = getHeaders();
+        options.headers["Authorization"] = `Bearer ${token}`;
         response = await fetch(`${BASE_URL}${endpoint}`, options);
       } catch (e) {
         console.warn("Stream refresh token failed", e);

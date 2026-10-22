@@ -46,7 +46,7 @@ class QuizService:
         yield f"event: session\ndata: {json.dumps({'session_id': session.id})}\n\n"
 
         valid_options = {"a", "b", "c", "d"}
-        
+        question_count = 0
         try:
             async for q in generate_mcqs_stream(
                 exam=space.exam_id,
@@ -77,6 +77,7 @@ class QuizService:
                 
                 # Save to DB individually
                 saved_q = (await self.repo.bulk_save_questions([question_obj]))[0]
+                question_count += 1
                 
                 # Yield to frontend
                 q_dict = {
@@ -90,6 +91,9 @@ class QuizService:
                     "topic": saved_q.topic
                 }
                 yield f"event: question\ndata: {json.dumps(q_dict)}\n\n"
+
+            if question_count == 0:
+                yield f"event: error\ndata: {json.dumps({'error': 'AI returned no valid questions. Try a different topic.'})}\n\n"
         except Exception as e:
             yield f"event: error\ndata: {json.dumps({'error': str(e)})}\n\n"
         finally:

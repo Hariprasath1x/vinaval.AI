@@ -1,9 +1,9 @@
 # =============================================================================
 # VinavalAI — Render Blueprint
-# Branch: react_version
+# Branch: main
 # =============================================================================
-# This file defines the Render deployment for both the backend (Web Service)
-# and frontend (Static Site).
+# This file defines the Render deployment for the backend (Web Service).
+# The frontend is hosted separately on Vercel.
 #
 # IMPORTANT: All secret values (API keys, JWT secret, etc.) must be configured
 # manually in the Render dashboard under "Environment Variables".
@@ -21,7 +21,7 @@ services:
   - type: web
     name: vinavalai-backend
     runtime: python
-    branch: react_version
+    branch: main
     rootDir: backend
 
     buildCommand: pip install -r requirements.txt && alembic upgrade head
@@ -44,7 +44,7 @@ services:
       - key: PYTHON_VERSION
         value: 3.10.6
 
-      # SQLite — do NOT change to PostgreSQL
+      # Database URL
       - key: DATABASE_URL
         value: sqlite+aiosqlite:///./vinavalai.db
 
@@ -65,29 +65,4 @@ services:
       # FIREBASE_WEB_API_KEY — from Firebase Console → Project Settings → General
       # FIREBASE_SERVICE_ACCOUNT_PATH — set to /etc/secrets/firebase.json
       #                                 after uploading via Secret Files
-      # FRONTEND_URL        — set to https://vinaval.hariprasath.me
-
-  # ---------------------------------------------------------------------------
-  # Frontend — React/Vite (Static Site)
-  # ---------------------------------------------------------------------------
-  - type: web
-    name: vinavalai-frontend
-    runtime: static
-    branch: react_version
-    rootDir: frontend
-
-    buildCommand: npm install && npm run build
-    staticPublishPath: dist
-
-    # SPA rewrite: all routes serve index.html (also handled by public/_redirects)
-    routes:
-      - type: rewrite
-        source: /*
-        destination: /index.html
-
-    envVars:
-      # Set this to your deployed backend URL, e.g.:
-      # VITE_API_URL=https://vinavalai-backend.onrender.com/api/v1
-      # Configure this in the Render dashboard — do NOT hardcode here.
-      - key: VITE_API_URL
-        value: ""   # REPLACE with actual backend URL in Render dashboard
+      # FRONTEND_URL        — set to your Vercel deployment URL (e.g. https://<app>.vercel.app)
