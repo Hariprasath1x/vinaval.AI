@@ -746,6 +746,19 @@ def _build_system_prompt(
     )
 
 
+async def _ensure_embedding_ready(timeout: float = 10.0) -> None:
+    """
+    Ensure the embedding model is ready before retrieval.
+    If provider is Pinecone, no local Chroma model initialization is needed.
+    If provider is Chroma, waits for the local model to warm up with a bounded timeout.
+    """
+    if getattr(settings, "VECTOR_STORE_PROVIDER", "chroma").lower() == "pinecone":
+        return
+
+    from app.core.chroma import wait_for_embedding_model
+    await wait_for_embedding_model(timeout=timeout)
+
+
 # ── Chat ──────────────────────────────────────────────────────────────────────
 
 async def stream_chat(
@@ -764,22 +777,23 @@ async def stream_chat(
     Stream an AI response token-by-token using Groq's async client.
     """
     from app.rag.retrieval_log import log_retrieval
-    from app.core.chroma import wait_for_embedding_model, EmbeddingNotReadyError
 
-    try:
-        await wait_for_embedding_model(timeout=10.0)
-    except EmbeddingNotReadyError as emb_err:
-        logger.warning(f"[RAG] Embedding model not ready ({emb_err}). Operating in fallback mode.")
-        if mode == "study_gpt" and space_id:
-            yield "VinavalAI's study engine is currently warming up. Please try asking again in a moment."
-            return
-        mode = "fallback"
-    except Exception as e:
-        logger.warning(f"[RAG] Embedding model check failed ({e}). Operating in fallback mode.")
-        if mode == "study_gpt" and space_id:
-            yield "VinavalAI's study engine is currently warming up. Please try asking again in a moment."
-            return
-        mode = "fallback"
+    if getattr(settings, "VECTOR_STORE_PROVIDER", "chroma").lower() != "pinecone":
+        from app.core.chroma import wait_for_embedding_model, EmbeddingNotReadyError
+        try:
+            await wait_for_embedding_model(timeout=10.0)
+        except EmbeddingNotReadyError as emb_err:
+            logger.warning(f"[RAG] Embedding model not ready ({emb_err}). Operating in fallback mode.")
+            if mode == "study_gpt" and space_id:
+                yield "VinavalAI's study engine is currently warming up. Please try asking again in a moment."
+                return
+            mode = "fallback"
+        except Exception as e:
+            logger.warning(f"[RAG] Embedding model check failed ({e}). Operating in fallback mode.")
+            if mode == "study_gpt" and space_id:
+                yield "VinavalAI's study engine is currently warming up. Please try asking again in a moment."
+                return
+            mode = "fallback"
 
     t_start = time.monotonic()
     
@@ -994,9 +1008,8 @@ async def get_chat_response(
     active_doc_filename: Optional[str] = None,
 ) -> str:
     """Non-streaming version — returns full response. Used as fallback or for testing."""
-    from app.core.chroma import wait_for_embedding_model, EmbeddingNotReadyError
     try:
-        await wait_for_embedding_model(timeout=10.0)
+        await _ensure_embedding_ready(timeout=10.0)
     except Exception as e:
         logger.warning(f"[RAG] Embedding model check failed in get_chat_response ({e})")
 
@@ -1055,9 +1068,8 @@ async def generate_mcqs(
     """
     Generate MCQ questions using Groq, grounded in ChromaDB context.
     """
-    from app.core.chroma import wait_for_embedding_model, EmbeddingNotReadyError
     try:
-        await wait_for_embedding_model(timeout=10.0)
+        await _ensure_embedding_ready(timeout=10.0)
     except Exception as e:
         logger.warning(f"[RAG] Embedding model unavailable for generate_mcqs ({e}). Proceeding with topic generation.")
 
@@ -1187,9 +1199,8 @@ async def generate_flashcards(
     lang: str = "en",
 ) -> List[Dict]:
     """Generate flashcard pairs (front/back) using Groq, grounded in ChromaDB context."""
-    from app.core.chroma import wait_for_embedding_model, EmbeddingNotReadyError
     try:
-        await wait_for_embedding_model(timeout=10.0)
+        await _ensure_embedding_ready(timeout=10.0)
     except Exception as e:
         logger.warning(f"[RAG] Embedding model unavailable for generate_flashcards ({e}). Proceeding with topic generation.")
 
@@ -1368,9 +1379,8 @@ async def generate_mcqs_stream(
     source_type: str = "curriculum",
     space_id: Optional[int] = None,
 ) -> AsyncGenerator[Dict, None]:
-    from app.core.chroma import wait_for_embedding_model, EmbeddingNotReadyError
     try:
-        await wait_for_embedding_model(timeout=10.0)
+        await _ensure_embedding_ready(timeout=10.0)
     except Exception as e:
         logger.warning(f"[RAG] Embedding model unavailable for generate_mcqs_stream ({e}). Proceeding with topic generation.")
 

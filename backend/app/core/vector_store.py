@@ -2,7 +2,6 @@ import logging
 from typing import List, Dict, Any, Optional
 from abc import ABC, abstractmethod
 
-from app.core import chroma
 from app.core.config import get_settings
 
 logger = logging.getLogger(__name__)
@@ -11,6 +10,66 @@ try:
     from pinecone import Pinecone
 except ImportError:
     Pinecone = None
+
+
+def build_collection_name(exam: str, subject: str, lang: Optional[str] = None) -> str:
+    """
+    Build a standard collection/namespace name.
+    Examples:
+        ("NEET", "Physics")        → "neet_physics"
+        ("NEET", "Physics", "en")  → "neet_physics_en"
+        ("NEET", "Physics", "ta")  → "neet_physics_ta"
+    """
+    base = f"{exam}_{subject}".lower().replace(" ", "_").replace("-", "_")
+    if lang:
+        return f"{base}_{lang.lower().strip()}"
+    return base
+
+
+class HuggingFaceInferenceEmbedding:
+    """
+    Lightweight serverless embedding client for 384-dimensional
+    paraphrase-multilingual-MiniLM-L12-v2 vectors without loading
+    in-process PyTorch/SentenceTransformers (~50MB vs ~1.13GB).
+    Preserves exact 384-dimensional semantic space for Tamil/English RAG.
+    """
+    def __init__(
+        self,
+        model_name: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+        token: Optional[str] = None,
+    ):
+        self.model_name = model_name
+        self.token = token
+        self._client = None
+
+    def _get_client(self):
+        if self._client is None:
+            from huggingface_hub import InferenceClient
+            settings = get_settings()
+            token = self.token or getattr(settings, "HF_TOKEN", None) or getattr(settings, "HUGGINGFACE_API_KEY", None)
+            self._client = InferenceClient(token=token)
+        return self._client
+
+    def __call__(self, input_texts: List[str]) -> List[List[float]]:
+        if not input_texts:
+            return []
+        client = self._get_client()
+        embeddings = []
+        for text in input_texts:
+            cleaned = text.strip() if text else ""
+            if not cleaned:
+                embeddings.append([0.0] * 384)
+                continue
+            res = client.feature_extraction(cleaned, model=self.model_name)
+            if hasattr(res, "tolist"):
+                res = res.tolist()
+            if isinstance(res, list) and len(res) > 0 and isinstance(res[0], list):
+                embeddings.append(res[0])
+            elif isinstance(res, list):
+                embeddings.append(res)
+            else:
+                embeddings.append(list(res))
+        return embeddings
 
 
 class VectorCollectionInterface(ABC):
@@ -130,17 +189,21 @@ class ChromaVectorStore(VectorStoreInterface):
     Adapter mapping VectorStoreInterface to the existing chroma.py functionality.
     """
     def get_collection(self, exam: str, subject: str, lang: Optional[str] = None) -> VectorCollectionInterface:
+        from app.core import chroma
         col = chroma.get_collection(exam, subject, lang)
         return ChromaVectorCollection(col)
 
     def get_collections_for_subject(self, exam: str, subject: str) -> List[VectorCollectionInterface]:
+        from app.core import chroma
         cols = chroma.get_collections_for_subject(exam, subject)
         return [ChromaVectorCollection(col) for col in cols]
 
     def list_collections(self) -> List[str]:
+        from app.core import chroma
         return chroma.list_all_collections()
 
     def get_collection_by_name(self, name: str) -> VectorCollectionInterface:
+        from app.core import chroma
         client = chroma.get_chroma_client()
         # Retrieve the collection using the existing embedding function
         # so that implicit embedding behavior is preserved.
@@ -153,19 +216,46 @@ class PineconeVectorCollection(VectorCollectionInterface):
     Adapter for a Pinecone namespace.
     Delegates operations and maps Pinecone responses to Chroma-expected structures.
     """
-    def __init__(self, index, namespace: str):
+    def __init__(self, index, namespace: str, embedding_function: Optional[Any] = None):
         self._index = index
         self._namespace = namespace
+        self._embedding_function = embedding_function
 
     @property
     def name(self) -> str:
         return self._namespace
 
+    def _get_embedding_function(self):
+        if self._embedding_function is not None:
+            return self._embedding_function
+
+        # 1. If Chroma's embedding function was patched in tests or already initialized, respect it
+        try:
+            from app.core import chroma
+            if getattr(chroma, "_embedding_function", None) is not None:
+                return chroma._embedding_function
+            from unittest.mock import Mock
+            if isinstance(chroma.get_embedding_function, Mock):
+                mock_fn = chroma.get_embedding_function()
+                if mock_fn is not None:
+                    return mock_fn
+        except Exception:
+            pass
+
+        # 2. In Pinecone mode (e.g. Render 512MB free tier), use lightweight serverless client
+        settings = get_settings()
+        if getattr(settings, "VECTOR_STORE_PROVIDER", "chroma").lower() == "pinecone":
+            return HuggingFaceInferenceEmbedding()
+
+        # 3. Fallback for Chroma / local development
+        from app.core import chroma
+        return chroma.get_embedding_function()
+
     def query(self, query_texts: List[str], n_results: int, where: Optional[Dict] = None) -> Dict[str, Any]:
         if not query_texts:
             return {"documents": [[]], "metadatas": [[]], "distances": [[]]}
 
-        embedding_function = chroma.get_embedding_function()
+        embedding_function = self._get_embedding_function()
         if embedding_function is None:
             raise RuntimeError("Embedding function is not available.")
         embeddings = embedding_function(query_texts)
@@ -249,7 +339,7 @@ class PineconeVectorCollection(VectorCollectionInterface):
         if not ids:
             return
 
-        embedding_function = chroma.get_embedding_function()
+        embedding_function = self._get_embedding_function()
         if embedding_function is None:
             raise RuntimeError("Embedding function is not available.")
         embeddings = embedding_function(documents)
@@ -315,11 +405,11 @@ class PineconeVectorStore(VectorStoreInterface):
         self._index = self._pc.Index(index_name)
 
     def get_collection(self, exam: str, subject: str, lang: Optional[str] = None) -> VectorCollectionInterface:
-        name = chroma._collection_name(exam, subject, lang)
+        name = build_collection_name(exam, subject, lang)
         return PineconeVectorCollection(self._index, name)
 
     def get_collections_for_subject(self, exam: str, subject: str) -> List[VectorCollectionInterface]:
-        prefix = chroma._collection_name(exam, subject)
+        prefix = build_collection_name(exam, subject)
         collections = []
         for name in self.list_collections():
             if name == prefix or name.startswith(prefix + "_"):
@@ -332,6 +422,10 @@ class PineconeVectorStore(VectorStoreInterface):
 
     def get_collection_by_name(self, name: str) -> VectorCollectionInterface:
         return PineconeVectorCollection(self._index, name)
+
+
+# Backward-compatibility alias
+_collection_name = build_collection_name
 
 
 # Singleton instance

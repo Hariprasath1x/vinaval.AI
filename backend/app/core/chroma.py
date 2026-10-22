@@ -30,18 +30,34 @@ logger = logging.getLogger(__name__)
 from app.core.config import get_settings as _get_settings
 _settings = _get_settings()
 
-logger.info("[RAG] Importing chromadb")
-try:
-    import chromadb
-    from chromadb.config import Settings
-    from chromadb.utils import embedding_functions
-    HAS_CHROMA = True
-    logger.info("[RAG] chromadb import completed")
-except ImportError:
-    HAS_CHROMA = False
-    chromadb = None
-    Settings = None
-    embedding_functions = None
+chromadb = None
+Settings = None
+embedding_functions = None
+HAS_CHROMA = None
+
+
+def _ensure_chromadb() -> bool:
+    """Lazily import chromadb only when ChromaDB features are explicitly requested."""
+    global chromadb, Settings, embedding_functions, HAS_CHROMA
+    if HAS_CHROMA is not None:
+        return HAS_CHROMA
+    logger.info("[RAG] Lazily importing chromadb")
+    try:
+        import chromadb as _chromadb
+        from chromadb.config import Settings as _Settings
+        from chromadb.utils import embedding_functions as _ef
+        chromadb = _chromadb
+        Settings = _Settings
+        embedding_functions = _ef
+        HAS_CHROMA = True
+        logger.info("[RAG] chromadb lazy import completed successfully")
+    except ImportError:
+        HAS_CHROMA = False
+        chromadb = None
+        Settings = None
+        embedding_functions = None
+        logger.warning("[RAG] chromadb is not installed")
+    return HAS_CHROMA
 
 # ChromaDB persistence directory: configurable via CHROMA_PERSIST_DIR env var.
 # Default resolves to <backend_root>/chroma_db where the pre-built RAG data lives.
@@ -120,6 +136,7 @@ def _load_embedding_model_sync():
         pass
 
     try:
+        _ensure_chromadb()
         if HAS_CHROMA and embedding_functions is not None:
             fn = embedding_functions.SentenceTransformerEmbeddingFunction(
                 model_name="paraphrase-multilingual-MiniLM-L12-v2"
@@ -260,8 +277,18 @@ _client: Optional[Any] = None
 
 # ── Client ─────────────────────────────────────────────────────────────────────
 
+def _get_rss_mb_str() -> str:
+    try:
+        import resource, sys
+        usage = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        val = usage / (1024 * 1024) if sys.platform == "darwin" else usage / 1024
+        return f"{val:.2f}"
+    except Exception:
+        return "N/A"
+
+
 def get_chroma_client():
-    if not HAS_CHROMA:
+    if not _ensure_chromadb():
         raise RuntimeError(
             "ChromaDB is not installed. RAG features are unavailable. "
             "Run: pip install chromadb"
@@ -270,12 +297,7 @@ def get_chroma_client():
     if _client is None:
         base_path = os.path.basename(CHROMA_PATH.rstrip("/\\"))
 
-        try:
-            import resource
-            before_rss = f"{resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024:.2f}"
-        except ImportError:
-            before_rss = "N/A"
-
+        before_rss = _get_rss_mb_str()
         logger.info(f"[RAG] About to initialize Chroma PersistentClient path={base_path} rss_mb={before_rss}")
         start = time.perf_counter()
         try:
@@ -288,12 +310,7 @@ def get_chroma_client():
             raise
 
         elapsed = (time.perf_counter() - start) * 1000
-        try:
-            import resource
-            after_rss = f"{resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024:.2f}"
-        except ImportError:
-            after_rss = "N/A"
-
+        after_rss = _get_rss_mb_str()
         logger.info(f"[RAG] Chroma PersistentClient initialized successfully elapsed_ms={elapsed:.2f} rss_mb={after_rss}")
     return _client
 

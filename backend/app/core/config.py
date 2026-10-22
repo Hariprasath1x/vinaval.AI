@@ -24,6 +24,11 @@ class Settings(BaseSettings):
 
     # Firebase Admin SDK
     FIREBASE_SERVICE_ACCOUNT_PATH: str = "./firebase-service-account.json"
+    FIREBASE_SERVICE_ACCOUNT_JSON: Optional[str] = None
+
+    # Hugging Face Inference API (for lightweight serverless embeddings in Pinecone mode)
+    HF_TOKEN: Optional[str] = None
+    HUGGINGFACE_API_KEY: Optional[str] = None
 
     # Gemini
     GEMINI_API_KEY: Optional[str] = None

@@ -111,33 +111,43 @@ class AuthService:
         """Verify a Firebase ID token, upsert the user, return a JWT."""
         user_info = verify_firebase_token(id_token)
 
-        user = await self.repo.get_by_google_id(user_info["uid"])
+        email = user_info.get("email")
+        if not email or not email.strip():
+            raise ValueError("Firebase token contains no valid email address.")
+
+        uid = user_info["uid"]
+        user = await self.repo.get_by_google_id(uid)
         if not user:
             # Check if email already exists (e.g., signed up via email/pw)
-            user = await self.repo.get_by_email(user_info["email"])
+            user = await self.repo.get_by_email(email)
             if user:
                 # Link Google ID to existing account
-                user.google_id = user_info["uid"]
+                user.google_id = uid
                 await self.db.commit()
                 await self.db.refresh(user)
             else:
                 try:
                     user = await self.repo.create(
                         UserCreate(
-                            google_id=user_info["uid"],
-                            email=user_info["email"],
-                            name=user_info["name"],
+                            google_id=uid,
+                            email=email,
+                            name=user_info.get("name") or email.split("@")[0],
                             avatar_url=user_info.get("picture"),
                         )
                     )
                 except IntegrityError:
                     # Fallback in case of a race condition (e.g., React StrictMode firing login twice)
                     await self.db.rollback()
-                    user = await self.repo.get_by_email(user_info["email"])
+                    user = await self.repo.get_by_email(email)
+                    if not user:
+                        user = await self.repo.get_by_google_id(uid)
                     if user and not user.google_id:
-                        user.google_id = user_info["uid"]
+                        user.google_id = uid
                         await self.db.commit()
                         await self.db.refresh(user)
+
+        if not user or not user.id:
+            raise RuntimeError("Unable to retrieve or persist authenticated user record.")
 
         access_token = create_access_token(data={"sub": str(user.id)})
         refresh_token = create_refresh_token(data={"sub": str(user.id)})

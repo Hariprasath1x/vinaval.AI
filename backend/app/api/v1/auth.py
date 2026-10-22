@@ -91,6 +91,12 @@ async def login(
         )
 
 
+import logging
+from app.core.firebase import FirebaseNotConfiguredError
+
+logger = logging.getLogger(__name__)
+
+
 # ── Firebase (Google Sign-In) ─────────────────────────────────────────────────
 
 class FirebaseLoginRequest(BaseModel):
@@ -103,15 +109,37 @@ async def firebase_login(
     db: AsyncSession = Depends(get_db),
 ):
     """Accepts a Firebase ID token and returns a JWT for API access."""
+    if not body.id_token or not body.id_token.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="ID token is required.",
+        )
+
     try:
         service = AuthService(db)
-        return await service.login_with_firebase(body.id_token)
+        return await service.login_with_firebase(body.id_token.strip())
+    except FirebaseNotConfiguredError:
+        logger.error("[AUTH] Firebase login attempted while Firebase Admin SDK is unconfigured.")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Firebase authentication service is not configured on this server.",
+        )
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc))
+        logger.warning(f"[AUTH] Firebase authentication failed: {type(exc).__name__}")
+        exc_str = str(exc).lower()
+        if any(w in exc_str for w in ("invalid", "expired", "email", "token")):
+            detail = str(exc)
+        else:
+            detail = "Invalid authentication credentials."
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=detail,
+        )
     except Exception as exc:
+        logger.exception(f"[AUTH] Unexpected error during Firebase login: {type(exc).__name__}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Authentication failed: {exc}",
+            detail="Authentication failed due to an internal server error. Please try again later.",
         )
 
 

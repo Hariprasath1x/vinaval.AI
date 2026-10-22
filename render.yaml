@@ -65,4 +65,5 @@ services:
       # FIREBASE_WEB_API_KEY — from Firebase Console → Project Settings → General
       # FIREBASE_SERVICE_ACCOUNT_PATH — set to /etc/secrets/firebase.json
       #                                 after uploading via Secret Files
+      # HF_TOKEN            — optional Hugging Face User Access Token for serverless inference
       # FRONTEND_URL        — set to your Vercel deployment URL (e.g. https://<app>.vercel.app)

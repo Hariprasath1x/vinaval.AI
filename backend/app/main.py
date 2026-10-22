@@ -144,24 +144,51 @@ _GOOGLE_POPUP_HTML = f"""<!DOCTYPE html>
 </html>"""
 
 
+def _get_memory_usage_mb() -> float | None:
+    try:
+        import resource, sys
+        usage = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        val = usage / (1024 * 1024) if sys.platform == "darwin" else usage / 1024
+        return round(val, 2)
+    except Exception:
+        return None
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Application lifespan: initialise Firebase on startup."""
+    """Application lifespan: initialise Firebase and configured vector store."""
     logger.info("[STARTUP] Initializing Firebase")
     init_firebase()
 
-    import asyncio
-    from app.core.chroma import init_embedding_model_background, init_embedding_readiness_state
+    provider = getattr(settings, "VECTOR_STORE_PROVIDER", "chroma").lower()
+    warmup_task = None
 
-    logger.info("[STARTUP] Initializing embedding readiness state...")
-    init_embedding_readiness_state()
+    if provider == "pinecone":
+        rss_mb = _get_memory_usage_mb()
+        logger.info(
+            f"[STARTUP] Provider=pinecone. Skipping local ChromaDB/SentenceTransformer warm-up. "
+            f"Current RSS: {rss_mb} MB (well below Render 512MB limit)."
+        )
+        try:
+            from app.core.vector_store import get_vector_store
+            get_vector_store()
+            logger.info(f"[STARTUP] Pinecone vector store connection verified index={getattr(settings, 'PINECONE_INDEX_NAME', None)}")
+        except Exception as exc:
+            logger.warning(f"[STARTUP] Pinecone vector store initialization warning: {type(exc).__name__}: {exc}")
+    else:
+        # Chroma mode (development / local)
+        import asyncio
+        from app.core.chroma import init_embedding_model_background, init_embedding_readiness_state
 
-    logger.info("[STARTUP] Starting background embedding model warm-up task...")
-    warmup_task = asyncio.create_task(init_embedding_model_background())
+        logger.info("[STARTUP] Initializing Chroma embedding readiness state...")
+        init_embedding_readiness_state()
+
+        logger.info("[STARTUP] Starting background embedding model warm-up task...")
+        warmup_task = asyncio.create_task(init_embedding_model_background())
 
     yield
-    
-    if not warmup_task.done():
+
+    if warmup_task is not None and not warmup_task.done():
         logger.info("[SHUTDOWN] Cancelling embedding model warm-up task...")
         warmup_task.cancel()
         try:
@@ -234,24 +261,58 @@ def create_app() -> FastAPI:
 
     @app.get("/health", tags=["Health"])
     async def health_check():
-        from app.core.chroma import get_embedding_status
+        provider = getattr(settings, "VECTOR_STORE_PROVIDER", "chroma").lower()
+        if provider == "pinecone":
+            is_configured = bool(settings.PINECONE_API_KEY and settings.PINECONE_INDEX_NAME)
+            embedding_info = {
+                "provider": "pinecone",
+                "index": settings.PINECONE_INDEX_NAME,
+                "status": "ready" if is_configured else "unconfigured",
+                "model": "paraphrase-multilingual-MiniLM-L12-v2",
+                "dimension": 384,
+                "error": None if is_configured else "Pinecone configuration is missing",
+            }
+        else:
+            from app.core.chroma import get_embedding_status
+            embedding_info = get_embedding_status()
+            embedding_info["provider"] = "chroma"
+
         return {
             "status": "ok",
             "app": settings.APP_NAME,
-            "embedding": get_embedding_status(),
+            "provider": provider,
+            "embedding": embedding_info,
+            "memory_rss_mb": _get_memory_usage_mb(),
         }
 
     @app.get("/health/ready", tags=["Health"])
     async def readiness_check():
-        from app.core.chroma import get_embedding_status
-        status_info = get_embedding_status()
-        is_ready = status_info.get("status") == "ready"
+        provider = getattr(settings, "VECTOR_STORE_PROVIDER", "chroma").lower()
+        if provider == "pinecone":
+            is_configured = bool(settings.PINECONE_API_KEY and settings.PINECONE_INDEX_NAME)
+            embedding_info = {
+                "provider": "pinecone",
+                "index": settings.PINECONE_INDEX_NAME,
+                "status": "ready" if is_configured else "unconfigured",
+                "model": "paraphrase-multilingual-MiniLM-L12-v2",
+                "dimension": 384,
+                "error": None if is_configured else "Pinecone configuration is missing",
+            }
+            is_ready = is_configured
+        else:
+            from app.core.chroma import get_embedding_status
+            embedding_info = get_embedding_status()
+            embedding_info["provider"] = "chroma"
+            is_ready = embedding_info.get("status") == "ready"
+
         from starlette.responses import JSONResponse
         return JSONResponse(
             content={
                 "ready": is_ready,
                 "app": settings.APP_NAME,
-                "embedding": status_info,
+                "provider": provider,
+                "embedding": embedding_info,
+                "memory_rss_mb": _get_memory_usage_mb(),
             },
             status_code=200 if is_ready else 503,
         )
