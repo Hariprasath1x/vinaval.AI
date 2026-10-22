@@ -170,5 +170,7 @@ async def mock_embedding_readiness():
     from app.core.chroma import init_embedding_readiness_state
     import app.core.chroma as chroma
     init_embedding_readiness_state()
+    chroma._embedding_status = "ready"
+    chroma._embedding_error = None
     if chroma._embedding_ready_event:
         chroma._embedding_ready_event.set()

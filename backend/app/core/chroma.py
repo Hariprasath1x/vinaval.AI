@@ -18,10 +18,12 @@ Books are seeded with an explicit --lang flag (e.g. "en" or "ta").
 Both collections are queried at retrieval time for maximum coverage.
 """
 from __future__ import annotations
-from typing import Optional, List, Any
+from typing import Optional, List, Any, Dict
 import logging
 import os
 import time
+import threading
+import asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -51,62 +53,205 @@ CHROMA_PATH = (
     else os.path.join(_BACKEND_DIR, _configured_dir.lstrip("./\\"))
 )
 
+# ── Exception classes ─────────────────────────────────────────────────────────
+
+class EmbeddingNotReadyError(RuntimeError):
+    """Raised when an embedding operation is requested before the model is ready."""
+    pass
+
+
+class EmbeddingTimeoutError(EmbeddingNotReadyError):
+    """Raised when waiting for the embedding model to initialize exceeds the timeout."""
+    pass
+
+
+class EmbeddingInitializationError(EmbeddingNotReadyError):
+    """Raised when the embedding model initialization encounters an unrecoverable error."""
+    pass
+
+
 # ── Multilingual Embedding Model ───────────────────────────────────────────────
 # paraphrase-multilingual-MiniLM-L12-v2:
 #   • Supports Tamil (ta), English (en), and 50+ other languages.
 #   • Semantic similarity is cross-lingual: Tamil query ↔ English document works.
-#   • ~120 MB download on first use; cached locally after that.
+#   • Produces 384-dimensional dense vectors compatible with both Chroma and Pinecone.
+#   • Initialized asynchronously in background with bounded timeout and retry safety.
 _embedding_function: Optional[Any] = None
-_embedding_ready_event: Optional[Any] = None
-_embedding_error: Optional[Exception] = None
+_embedding_status: str = "uninitialized"  # "uninitialized" | "loading" | "ready" | "error"
+_embedding_error: Optional[str] = None
+_embedding_ready_event: Optional[asyncio.Event] = None
+_init_lock = threading.Lock()
 
-def get_embedding_function():
-    global _embedding_function
-    if not HAS_CHROMA:
-        return None
-    if _embedding_function is None:
-        logger.info("[EMBED] Initializing embedding model model=paraphrase-multilingual-MiniLM-L12-v2")
-        start = time.perf_counter()
-        try:
-            _embedding_function = embedding_functions.SentenceTransformerEmbeddingFunction(  # type: ignore
+
+def get_embedding_status() -> Dict[str, Any]:
+    """Return lightweight, sanitized status of the embedding model."""
+    return {
+        "status": _embedding_status,
+        "model": "paraphrase-multilingual-MiniLM-L12-v2",
+        "error": _embedding_error,
+    }
+
+
+def reset_embedding_state():
+    """Reset embedding state (used primarily in tests and recovery)."""
+    global _embedding_function, _embedding_status, _embedding_error, _embedding_ready_event
+    with _init_lock:
+        _embedding_function = None
+        _embedding_status = "uninitialized"
+        _embedding_error = None
+        _embedding_ready_event = None
+
+
+def _load_embedding_model_sync():
+    """
+    Synchronously load the SentenceTransformer model with single-thread CPU constraints.
+    """
+    global _embedding_function, _embedding_status, _embedding_error
+
+    _embedding_status = "loading"
+    logger.info("[EMBED] Initializing embedding model model=paraphrase-multilingual-MiniLM-L12-v2")
+    start = time.perf_counter()
+
+    # Constrain PyTorch thread contention on memory/CPU-constrained environments (e.g. Render 0.15 CPU)
+    try:
+        import torch
+        torch.set_num_threads(1)
+    except Exception:
+        pass
+
+    try:
+        if HAS_CHROMA and embedding_functions is not None:
+            fn = embedding_functions.SentenceTransformerEmbeddingFunction(
                 model_name="paraphrase-multilingual-MiniLM-L12-v2"
             )
-            elapsed_ms = (time.perf_counter() - start) * 1000
-            logger.info(f"[EMBED] Embedding model initialized elapsed_ms={elapsed_ms:.2f}")
-        except Exception as e:
-            logger.exception(f"[EMBED] Embedding model initialization FAILED exception_type={type(e).__name__} exception={str(e)}")
-            raise
-    return _embedding_function
+        else:
+            try:
+                from sentence_transformers import SentenceTransformer
+                st_model = SentenceTransformer("paraphrase-multilingual-MiniLM-L12-v2", device="cpu")
+                class _DirectSTEmbeddingFunction:
+                    def __init__(self, model):
+                        self._model = model
+                    def __call__(self, input: list[str]) -> list[list[float]]:
+                        embeddings = self._model.encode(list(input), normalize_embeddings=False)
+                        return embeddings.tolist()
+                fn = _DirectSTEmbeddingFunction(st_model)
+            except ImportError as imp_err:
+                raise RuntimeError("Neither chromadb nor sentence-transformers is available for embeddings.") from imp_err
+
+        # Free transient buffers created during weight loading
+        try:
+            import gc
+            gc.collect()
+        except Exception:
+            pass
+
+        elapsed_ms = (time.perf_counter() - start) * 1000
+        _embedding_status = "ready"
+        _embedding_error = None
+        _embedding_function = fn
+        logger.info(f"[EMBED] Embedding model initialized successfully elapsed_ms={elapsed_ms:.2f}")
+        return fn
+    except Exception as e:
+        _embedding_status = "error"
+        _embedding_error = f"{type(e).__name__}: {str(e)}"
+        logger.exception(f"[EMBED] Embedding model initialization FAILED exception_type={type(e).__name__} exception={str(e)}")
+        raise
+
+
+def get_embedding_function():
+    """
+    Return the shared embedding model function.
+    Loads synchronously with double-checked thread lock if not yet initialized.
+    """
+    global _embedding_function
+    if _embedding_function is not None:
+        return _embedding_function
+
+    with _init_lock:
+        if _embedding_function is not None:
+            return _embedding_function
+        _embedding_function = _load_embedding_model_sync()
+        return _embedding_function
+
 
 def init_embedding_readiness_state():
+    """Initialize the asyncio.Event used to coordinate background warm-up."""
     global _embedding_ready_event
-    import asyncio
     if _embedding_ready_event is None:
         _embedding_ready_event = asyncio.Event()
-
-
-async def init_embedding_model_background():
-    global _embedding_error, _embedding_ready_event
-    import asyncio
-    try:
-        await asyncio.to_thread(get_embedding_function)
-    except Exception as e:
-        _embedding_error = e
-    finally:
-        if _embedding_ready_event:
+        if _embedding_status == "ready":
             _embedding_ready_event.set()
 
 
-async def wait_for_embedding_model():
-    global _embedding_ready_event
-    if _embedding_ready_event is None:
-        raise RuntimeError("Embedding readiness state was not initialized during startup.")
-    
-    if not _embedding_ready_event.is_set():
-        await _embedding_ready_event.wait()
-    
-    if _embedding_error is not None:
-        raise RuntimeError("Embedding model failed to initialize during background warm-up.") from _embedding_error
+async def init_embedding_model_background(force_retry: bool = False):
+    """
+    Background warm-up task. Offloads synchronous model loading to a worker thread
+    so FastAPI startup and the event loop are never blocked.
+    """
+    global _embedding_ready_event, _embedding_error, _embedding_status, _embedding_function
+
+    init_embedding_readiness_state()
+
+    if _embedding_status == "ready" and not force_retry:
+        if _embedding_ready_event and not _embedding_ready_event.is_set():
+            _embedding_ready_event.set()
+        return
+
+    if _embedding_status == "loading" and not force_retry:
+        return
+
+    _embedding_status = "loading"
+    _embedding_error = None
+
+    try:
+        fn = await asyncio.to_thread(get_embedding_function)
+        _embedding_function = fn
+        _embedding_status = "ready"
+        _embedding_error = None
+        if _embedding_ready_event:
+            _embedding_ready_event.set()
+    except asyncio.CancelledError:
+        logger.info("[EMBED] Background embedding warm-up was cancelled.")
+        if _embedding_status != "ready":
+            _embedding_status = "uninitialized"
+        raise
+    except Exception as e:
+        _embedding_status = "error"
+        _embedding_error = f"{type(e).__name__}: {str(e)}"
+        if _embedding_ready_event:
+            _embedding_ready_event.set()  # Unblock waiters so they receive the error instead of hanging
+
+
+async def wait_for_embedding_model(timeout: float = 15.0, allow_retry: bool = True):
+    """
+    Wait for the embedding model to be ready with a bounded timeout.
+    Prevents RAG requests from hanging indefinitely or silently using an uninitialized model.
+    """
+    global _embedding_ready_event, _embedding_status, _embedding_error
+
+    if _embedding_status == "ready":
+        return
+
+    init_embedding_readiness_state()
+
+    # If uninitialized or previous error with retry allowed, start warm-up task
+    if _embedding_status == "uninitialized" or (_embedding_status == "error" and allow_retry):
+        if _embedding_ready_event:
+            _embedding_ready_event.clear()
+        asyncio.create_task(init_embedding_model_background(force_retry=True))
+
+    # Wait for the event with a bounded timeout
+    try:
+        await asyncio.wait_for(_embedding_ready_event.wait(), timeout=timeout)
+    except asyncio.TimeoutError:
+        raise EmbeddingTimeoutError(
+            f"Embedding model initialization timed out after {timeout:.1f}s. Please retry shortly."
+        )
+
+    if _embedding_status == "error" or _embedding_error is not None:
+        raise EmbeddingInitializationError(
+            f"Embedding model initialization failed: {_embedding_error}"
+        )
 
 
 _client: Optional[Any] = None

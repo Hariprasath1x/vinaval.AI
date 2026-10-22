@@ -164,6 +164,10 @@ async def lifespan(app: FastAPI):
     if not warmup_task.done():
         logger.info("[SHUTDOWN] Cancelling embedding model warm-up task...")
         warmup_task.cancel()
+        try:
+            await warmup_task
+        except asyncio.CancelledError:
+            logger.info("[SHUTDOWN] Embedding model warm-up task cancelled cleanly")
 
 
 def create_app() -> FastAPI:
@@ -230,7 +234,27 @@ def create_app() -> FastAPI:
 
     @app.get("/health", tags=["Health"])
     async def health_check():
-        return {"status": "ok", "app": settings.APP_NAME}
+        from app.core.chroma import get_embedding_status
+        return {
+            "status": "ok",
+            "app": settings.APP_NAME,
+            "embedding": get_embedding_status(),
+        }
+
+    @app.get("/health/ready", tags=["Health"])
+    async def readiness_check():
+        from app.core.chroma import get_embedding_status
+        status_info = get_embedding_status()
+        is_ready = status_info.get("status") == "ready"
+        from starlette.responses import JSONResponse
+        return JSONResponse(
+            content={
+                "ready": is_ready,
+                "app": settings.APP_NAME,
+                "embedding": status_info,
+            },
+            status_code=200 if is_ready else 503,
+        )
 
     # ── Google OAuth popup page — served from localhost:8000 so Firebase JS
     # has a valid HTTP origin (not about:srcdoc like Streamlit iframes).

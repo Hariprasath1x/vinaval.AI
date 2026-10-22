@@ -166,6 +166,8 @@ class PineconeVectorCollection(VectorCollectionInterface):
             return {"documents": [[]], "metadatas": [[]], "distances": [[]]}
 
         embedding_function = chroma.get_embedding_function()
+        if embedding_function is None:
+            raise RuntimeError("Embedding function is not available.")
         embeddings = embedding_function(query_texts)
 
         results_documents = []
@@ -248,6 +250,8 @@ class PineconeVectorCollection(VectorCollectionInterface):
             return
 
         embedding_function = chroma.get_embedding_function()
+        if embedding_function is None:
+            raise RuntimeError("Embedding function is not available.")
         embeddings = embedding_function(documents)
 
         vectors_to_upsert = []
