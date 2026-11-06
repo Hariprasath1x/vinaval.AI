@@ -51,6 +51,19 @@ function AppRoutes() {
         element={<ProtectedRoute><Space /></ProtectedRoute>} 
       />
       <Route 
+        path="/space/:spaceId/:tab" 
+        element={<ProtectedRoute><Space /></ProtectedRoute>} 
+      />
+      <Route 
+        path="/spaces/:spaceId" 
+        element={<ProtectedRoute><Space /></ProtectedRoute>} 
+      />
+      <Route 
+        path="/spaces/:spaceId/:tab" 
+        element={<ProtectedRoute><Space /></ProtectedRoute>} 
+      />
+
+      <Route 
         path="/profile" 
         element={<ProtectedRoute><Profile /></ProtectedRoute>} 
       />

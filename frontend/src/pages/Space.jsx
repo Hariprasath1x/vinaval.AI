@@ -9,7 +9,8 @@ import {
   BarChart2, 
   ArrowLeft,
   BookOpen,
-  Bot
+  Bot,
+  BookMarked
 } from 'lucide-react';
 import './Space.css';
 
@@ -19,21 +20,31 @@ import MaterialsTab from '../components/Space/MaterialsTab';
 import FlashcardsTab from '../components/Space/FlashcardsTab';
 import ExamLabTab from '../components/Space/ExamLabTab';
 import ReportsTab from '../components/Space/ReportsTab';
+import NotesTab from '../components/Space/NotesTab';
 
 export default function Space() {
-  const { spaceId } = useParams();
+  const { spaceId, tab } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
   
+  const initialTab = tab ? tab.toLowerCase() : (location.state?.activeTab || 'learn');
   const [space, setSpace] = useState(location.state?.space || null);
-  const [activeTab, setActiveTab] = useState(location.state?.activeTab || 'learn');
+  const [activeTab, setActiveTab] = useState(initialTab);
   const [activeFile, setActiveFile] = useState(null);
   const [loading, setLoading] = useState(!space);
 
-  const handleTabChange = (tab, file = null) => {
-    setActiveTab(tab);
+  useEffect(() => {
+    if (tab) {
+      setActiveTab(tab.toLowerCase());
+    }
+  }, [tab]);
+
+  const handleTabChange = (newTab, file = null) => {
+    setActiveTab(newTab);
     if (file) setActiveFile(file);
+    navigate(`/spaces/${spaceId}/${newTab}`, { replace: true, state: { space, activeTab: newTab } });
   };
+
 
   useEffect(() => {
     if (!space) {
@@ -83,8 +94,11 @@ export default function Space() {
         return <FlashcardsTab spaceId={spaceId} space={space} />;
       case 'examlab':
         return <ExamLabTab spaceId={spaceId} space={space} onTabChange={handleTabChange} />;
+      case 'notes':
+        return <NotesTab spaceId={spaceId} space={space} onTabChange={handleTabChange} />;
       case 'reports':
         return <ReportsTab spaceId={spaceId} space={space} />;
+
       default:
         return <SharedChatTab key="default" spaceId={spaceId} space={space} chatType="AI_TUTOR" />;
     }
@@ -138,19 +152,28 @@ export default function Space() {
           
           <button 
             className={`nav-item ${activeTab === 'examlab' ? 'active' : ''}`}
-            onClick={() => setActiveTab('examlab')}
+            onClick={() => handleTabChange('examlab')}
           >
             <ClipboardCheck size={18} />
             Exam Lab
           </button>
           
           <button 
+            className={`nav-item ${activeTab === 'notes' ? 'active' : ''}`}
+            onClick={() => handleTabChange('notes')}
+          >
+            <BookMarked size={18} />
+            Smart Notes
+          </button>
+          
+          <button 
             className={`nav-item ${activeTab === 'reports' ? 'active' : ''}`}
-            onClick={() => setActiveTab('reports')}
+            onClick={() => handleTabChange('reports')}
           >
             <BarChart2 size={18} />
             Reports
           </button>
+
         </nav>
 
         <div className="space-footer">

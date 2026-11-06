@@ -146,6 +146,28 @@ export const api = {
       headers: getHeaders(),
     });
   },
+
+  // ── Smart Notes ─────────────────────────────────────────────────────────────
+  generateSmartNotes: async (spaceId, body) => {
+    return api.post(`/spaces/${spaceId}/notes/generate`, body);
+  },
+  createSmartNote: async (spaceId, body) => {
+    return api.post(`/spaces/${spaceId}/notes`, body);
+  },
+  listSmartNotes: async (spaceId, search = '') => {
+    const params = search && search.trim() ? { search: search.trim() } : {};
+    return api.get(`/spaces/${spaceId}/notes`, params);
+  },
+  getSmartNote: async (spaceId, noteId) => {
+    return api.get(`/spaces/${spaceId}/notes/${noteId}`);
+  },
+  updateSmartNote: async (spaceId, noteId, body) => {
+    return api.put(`/spaces/${spaceId}/notes/${noteId}`, body);
+  },
+  deleteSmartNote: async (spaceId, noteId) => {
+    return api.delete(`/spaces/${spaceId}/notes/${noteId}`);
+  },
+
   
   // Custom streamer for RAG Chat
   

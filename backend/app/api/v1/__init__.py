@@ -5,6 +5,7 @@ from app.api.v1.space import router as space_router
 from app.api.v1.quiz import router as quiz_router
 from app.api.v1.flashcard import router as flashcard_router
 from app.api.v1.document import router as document_router
+from app.api.v1.note import router as note_router
 
 router = APIRouter(prefix="/api/v1")
 
@@ -14,3 +15,5 @@ router.include_router(space_router)
 router.include_router(quiz_router)
 router.include_router(flashcard_router)
 router.include_router(document_router)
+router.include_router(note_router)
+

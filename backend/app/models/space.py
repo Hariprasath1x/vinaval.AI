@@ -17,4 +17,4 @@ class LearningSpace(Base):
     # Relationships
     messages = relationship("ChatMessage", back_populates="space", cascade="all, delete-orphan", order_by="ChatMessage.created_at")
     chat_sessions = relationship("ChatSession", back_populates="space", cascade="all, delete-orphan", order_by="ChatSession.created_at")
-    note = relationship("SpaceNote", back_populates="space", uselist=False, cascade="all, delete-orphan")
+    notes = relationship("SpaceNote", back_populates="space", cascade="all, delete-orphan", order_by="SpaceNote.created_at.desc()")

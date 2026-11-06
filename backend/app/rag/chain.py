@@ -1533,3 +1533,133 @@ async def generate_flashcards_stream(
                     except Exception:
                         pass
                     obj_str = ""
+
+
+# ── Smart Notes Generation ───────────────────────────────────────────────────
+
+SMART_NOTES_SYSTEM = """\
+You are an expert academic tutor and exam preparation specialist for {exam} {subject}.
+Your task is to generate comprehensive, structured, high-yield Smart Notes on the topic: "{topic}".
+
+{context_block}
+
+### Output Language Requirement:
+{lang_instruction}
+
+### Formatting Guidelines:
+- Write in clean, structured GitHub-flavored Markdown.
+- Use clear hierarchical headings (##, ###).
+- Do NOT repeat the prompt instructions or include meta-commentary. Start directly with the note title and content.
+- Use bullet points, bold key terms, and tables where appropriate to summarize comparisons.
+- For mathematical or scientific formulas, format them in standard LaTeX notation ($...$).
+- Base your notes strictly and faithfully on the provided context material.
+- If context was provided, ground all key facts, definitions, and theories in that context. Do not invent contradictory information.
+
+### Required Structure:
+1. **Overview & Executive Summary**: Concise 2-3 sentence overview of the topic.
+2. **Core Concepts & Definitions**: In-depth explanation of primary principles, mechanisms, and key definitions.
+3. **Important Formulas / Facts / High-Yield Points**: Essential points frequently tested in competitive exams ({exam}).
+4. **Key Takeaways & Quick Review**: 4-6 concise bullet points for fast revision.
+"""
+
+_NOTE_LANG_INSTRUCTIONS = {
+    "ta": (
+        "Write the complete notes in Tamil. "
+        "For scientific, mathematical, or technical terms, provide the Tamil term first followed by the English equivalent in parentheses (e.g., ஒளிச்சேர்க்கை (Photosynthesis))."
+    ),
+    "en": "Write the entire notes in clear, academic English.",
+}
+
+
+async def generate_smart_notes(
+    exam: str,
+    subject: str,
+    topic: Optional[str] = None,
+    doc_id: Optional[int] = None,
+    lang: str = "en",
+    source_type: str = "curriculum",
+    space_id: Optional[int] = None,
+) -> Dict[str, Any]:
+    """
+    Generate structured Smart Notes grounded in ChromaDB / Pinecone vector context.
+    Returns:
+        {
+            "title": str,
+            "content": str,
+            "topic": str,
+            "source_type": str,
+            "chunks_used": int
+        }
+    """
+    try:
+        await _ensure_embedding_ready(timeout=10.0)
+    except Exception as e:
+        logger.warning(f"[RAG] Embedding model unavailable for generate_smart_notes ({e}). Proceeding with context-free or fallback.")
+
+    context_block = ""
+    chunks_used = 0
+    resolved_topic = (topic or subject or "General Overview").strip()
+
+    if source_type == "document" and doc_id:
+        context_block, chunks_used, topics_found = _load_all_doc_chunks(exam, subject, doc_id)
+        if not context_block:
+            context_block, chunks_used = _retrieve_doc_context(exam, subject, resolved_topic, doc_id, n_results=8)
+        if topics_found and not topic:
+            resolved_topic = ", ".join(topics_found[:2])
+    elif source_type == "user" and space_id:
+        context_block, chunks_used = _retrieve_user_context(exam, subject, resolved_topic, space_id, n_results=8)
+    else:  # curriculum / syllabus
+        context_block, chunks_used = _retrieve_syllabus_context(exam, subject, resolved_topic, n_results=6)
+
+    if context_block:
+        context_header = (
+            "### Reference Material from Context:\n"
+            + context_block
+            + "\nBase the notes strictly on the above reference material.\n"
+        )
+    else:
+        context_header = f"### Reference Material:\nNo external document context found. Use standard NCERT / State Board curriculum knowledge for {exam} {subject}."
+
+    lang_instruction = _NOTE_LANG_INSTRUCTIONS.get(lang, _NOTE_LANG_INSTRUCTIONS["en"])
+
+    prompt = SMART_NOTES_SYSTEM.format(
+        exam=exam,
+        subject=subject,
+        topic=resolved_topic,
+        context_block=context_header,
+        lang_instruction=lang_instruction,
+    )
+
+    t0 = time.perf_counter()
+    try:
+        raw_content = await _llm_complete(
+            prompt,
+            max_tokens=4096,
+            temperature=0.3,
+        )
+    except Exception as e:
+        logger.error(f"[RAG] LLM generation failed for Smart Notes: {e}")
+        raise ValueError(f"Note generation failed: {e}") from e
+
+    logger.info(f"[TELEMETRY] generate_smart_notes LLM time: {time.perf_counter() - t0:.3f}s for topic '{resolved_topic}'")
+
+    if not raw_content:
+        raise ValueError("LLM returned an empty response for note generation.")
+
+    # Derive note title
+    title = f"{resolved_topic} - Smart Notes"
+    lines = raw_content.strip().splitlines()
+    for line in lines[:3]:
+        line_clean = line.strip().lstrip("#").strip()
+        if line_clean and len(line_clean) < 100:
+            title = line_clean
+            break
+
+    return {
+        "title": title,
+        "content": raw_content.strip(),
+        "topic": resolved_topic,
+        "source_type": source_type,
+        "chunks_used": chunks_used,
+    }
+
