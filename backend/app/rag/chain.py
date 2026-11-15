@@ -1413,47 +1413,122 @@ async def generate_mcqs_stream(
         lang_instruction=lang_instruction,
     )
     
-    buffer = ""
-    brace_count = 0
-    obj_str = ""
-    async for chunk in _llm_complete_stream(batch_prompt, max_tokens=4096, temperature=0.5):
-        buffer += chunk
-        while buffer:
-            if brace_count == 0:
-                start = buffer.find("{")
-                if start == -1:
-                    buffer = ""
-                    break
-                buffer = buffer[start:]
-                brace_count = 1
-                obj_str = "{"
-                buffer = buffer[1:]
-            
-            # Find the next { or }
-            next_open = buffer.find("{")
-            next_close = buffer.find("}")
-            
-            if next_close == -1:
-                obj_str += buffer
-                buffer = ""
-                break
-                
-            if next_open != -1 and next_open < next_close:
-                brace_count += 1
-                obj_str += buffer[:next_open + 1]
-                buffer = buffer[next_open + 1:]
+async def _parse_json_objects_stream(chunk_stream: AsyncGenerator[str, None]) -> AsyncGenerator[Dict, None]:
+    """
+    Robust incremental JSON object stream parser.
+    Extracts top-level discrete JSON objects from an arbitrary token/character stream,
+    correctly handling:
+      - Quoted strings and escaped quotes (\\", \\\\)
+      - Braces inside string values (e.g. math sets, LaTeX, emoticons)
+      - Nested objects and arrays
+      - Outer framing (brackets, commas, markdown fences, whitespace)
+      - Explicit diagnostic logging on parse errors or truncated streams
+    """
+    in_string = False
+    escape_count = 0
+    brace_depth = 0
+    current_obj_chars = []
+
+    async for chunk in chunk_stream:
+        if not chunk:
+            continue
+
+        for ch in chunk:
+            if brace_depth == 0:
+                if ch == '{':
+                    brace_depth = 1
+                    in_string = False
+                    escape_count = 0
+                    current_obj_chars = ['{']
+                continue
+
+            current_obj_chars.append(ch)
+
+            if in_string:
+                if ch == '"':
+                    if escape_count % 2 == 1:
+                        # Escaped quote: remains inside string
+                        escape_count = 0
+                    else:
+                        # Unescaped quote: exits string
+                        in_string = False
+                        escape_count = 0
+                elif ch == '\\':
+                    escape_count += 1
+                else:
+                    escape_count = 0
             else:
-                brace_count -= 1
-                obj_str += buffer[:next_close + 1]
-                buffer = buffer[next_close + 1:]
-                
-                if brace_count == 0:
-                    try:
-                        obj = json.loads(obj_str)
-                        yield obj
-                    except Exception:
-                        pass
-                    obj_str = ""
+                if ch == '"':
+                    in_string = True
+                    escape_count = 0
+                elif ch == '{':
+                    brace_depth += 1
+                elif ch == '}':
+                    brace_depth -= 1
+                    if brace_depth == 0:
+                        raw_str = "".join(current_obj_chars)
+                        current_obj_chars = []
+                        in_string = False
+                        escape_count = 0
+                        try:
+                            parsed = json.loads(raw_str)
+                            if isinstance(parsed, dict):
+                                yield parsed
+                            else:
+                                logger.warning(f"[STREAM_PARSER] Parsed non-dict JSON item: {type(parsed)}")
+                        except json.JSONDecodeError as err:
+                            logger.warning(
+                                f"[STREAM_PARSER] Failed to parse candidate JSON object: {err}. "
+                                f"Snippet: {raw_str[:120]}"
+                            )
+
+    if brace_depth > 0:
+        raw_leftover = "".join(current_obj_chars)
+        logger.warning(
+            f"[STREAM_PARSER] Stream ended with unclosed JSON object (depth={brace_depth}). "
+            f"Snippet: {raw_leftover[:120]}"
+        )
+
+
+async def generate_mcqs_stream(
+    exam: str,
+    subject: str,
+    topic: Optional[str] = None,
+    count: int = 5,
+    lang: str = "en",
+    source_type: str = "curriculum",
+    space_id: Optional[int] = None,
+) -> AsyncGenerator[Dict, None]:
+    if source_type == "user" and space_id:
+        context_block, chunk_count = _retrieve_user_context(exam, subject, topic or "", space_id, n_results=5)
+        if chunk_count > 0 and len(context_block) < 500:
+            syl_context, _ = _retrieve_syllabus_context(exam, subject, topic or "", n_results=2)
+            context_block += "\n\n### Additional Reference Material:\n" + syl_context
+    else:
+        context_block, _ = _retrieve_syllabus_context(exam, subject, topic or "", n_results=5)
+
+    if context_block:
+        if len(context_block) > 15000:
+            context_block = context_block[:15000] + "\n...[truncated]"
+        context_block = (
+            "### Reference Material from Syllabus:\n" + context_block +
+            "\nBase your questions on this material where possible.\n"
+        )
+
+    lang_instruction = _MCQ_LANG_INSTRUCTIONS.get(lang, _MCQ_LANG_INSTRUCTIONS["en"])
+
+    batch_prompt = MCQ_SYSTEM.format(
+        exam=exam,
+        subject=subject,
+        topic_instruction=f'Generate exactly {count} multiple-choice questions on the topic: "{topic}"' if topic else f'Generate exactly {count} multiple-choice questions covering diverse topics',
+        count=count,
+        context_block=context_block,
+        lang_instruction=lang_instruction,
+    )
+
+    chunk_stream = _llm_complete_stream(batch_prompt, max_tokens=4096, temperature=0.5)
+    async for obj in _parse_json_objects_stream(chunk_stream):
+        yield obj
 
 
 async def generate_flashcards_stream(
@@ -1491,48 +1566,10 @@ async def generate_flashcards_stream(
         context_block=context_block,
         lang_instruction=lang_instruction,
     )
-    
-    buffer = ""
-    brace_count = 0
-    obj_str = ""
-    async for chunk in _llm_complete_stream(batch_prompt, max_tokens=4096, temperature=0.5):
-        buffer += chunk
-        while buffer:
-            if brace_count == 0:
-                start = buffer.find("{")
-                if start == -1:
-                    buffer = ""
-                    break
-                buffer = buffer[start:]
-                brace_count = 1
-                obj_str = "{"
-                buffer = buffer[1:]
-            
-            # Find the next { or }
-            next_open = buffer.find("{")
-            next_close = buffer.find("}")
-            
-            if next_close == -1:
-                obj_str += buffer
-                buffer = ""
-                break
-                
-            if next_open != -1 and next_open < next_close:
-                brace_count += 1
-                obj_str += buffer[:next_open + 1]
-                buffer = buffer[next_open + 1:]
-            else:
-                brace_count -= 1
-                obj_str += buffer[:next_close + 1]
-                buffer = buffer[next_close + 1:]
-                
-                if brace_count == 0:
-                    try:
-                        obj = json.loads(obj_str)
-                        yield obj
-                    except Exception:
-                        pass
-                    obj_str = ""
+
+    chunk_stream = _llm_complete_stream(batch_prompt, max_tokens=4096, temperature=0.5)
+    async for obj in _parse_json_objects_stream(chunk_stream):
+        yield obj
 
 
 # ── Smart Notes Generation ───────────────────────────────────────────────────
